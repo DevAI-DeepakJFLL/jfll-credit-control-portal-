@@ -1,0 +1,84 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv/
+backend/venv/
+
+# Node & Frontend dependencies & build artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+*.local
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Operating System & IDE metadata
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project Data & Storage (Do NOT commit runtime customer financial records or SQLite DB)
+backend/storage/*.db
+backend/storage/*.db-shm
+backend/storage/*.db-wal
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
+backend/storage/memos/*
+!backend/storage/memos/.gitkeep
+
+# AI Tooling, Prompts, Assistant Artifacts & Development Scratchpads
+.agent/
+.gemini/
+.claude/
+.cursor/
+.windsurf/
+.system_generated/
+brain/
+scratch/
+*.prompt.md
+*.scratch.*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
