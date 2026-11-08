@@ -23,6 +23,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Verify Zero Hardcoded Secrets & Clean Repository Storage
+        run: |
+          echo "=== Scanning for tracked SQLite DBs or sensitive environment files ==="
+          if git ls-files backend/storage | grep -E '\.(db|db-wal|db-shm)$'; then
+            echo "::error::Detected committed database files in backend/storage!"
+            exit 1
+          fi
+          if git ls-files | grep -E '^\.env($|\.local|\.production|\.development|\.secret)'; then
+            echo "::error::Detected committed .env file!"
+            exit 1
+          fi
+          echo "✅ Security verification passed: Zero credentials or sensitive database files tracked."
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -37,19 +50,6 @@ jobs:
       - name: Run Backend Unit Test Suite (16/16)
         run: |
           python -m unittest discover backend/tests -v
-
-      - name: Verify Zero Hardcoded Secrets & Clean Storage
-        run: |
-          echo "=== Scanning for stray SQLite DBs or sensitive environment files ==="
-          if find backend/storage -type f \( -name "*.db" -o -name "*.db-wal" -o -name "*.db-shm" \) | grep -q .; then
-            echo "::error::Detected committed database files in backend/storage!"
-            exit 1
-          fi
-          if [ -f .env ]; then
-            echo "::error::Detected uncommitted local .env file!"
-            exit 1
-          fi
-          echo "✅ Security verification passed: Zero credentials or sensitive data detected."
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
