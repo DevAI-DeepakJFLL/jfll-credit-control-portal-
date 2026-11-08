@@ -18,7 +18,6 @@ from backend.app.database import (
     init_db,
     save_appraisal,
     get_all_appraisals,
-    get_appraisal_by_id,
     get_appraisal_by_token_or_id,
     get_appraisals_count
 )

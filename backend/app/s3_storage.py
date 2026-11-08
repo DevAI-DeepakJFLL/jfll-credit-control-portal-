@@ -8,7 +8,6 @@ Gracefully no-ops in local development or if AWS credentials/bucket are absent.
 import os
 import json
 import logging
-from typing import Optional
 
 logger = logging.getLogger("s3_storage")
 
