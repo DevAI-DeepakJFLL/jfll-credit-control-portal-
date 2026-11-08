@@ -131,7 +131,9 @@ jobs:
           # Copy application modules and entrypoint
           mkdir -p build_package/backend
           cp -r backend/app build_package/backend/
+          cp backend/__init__.py build_package/backend/ 2>/dev/null || true
           cp lambda_handler.py build_package/
+          cp lambda_function.py build_package/
           cp jfll-logo.jpeg build_package/
           
           # Remove local bytecode from application code
@@ -181,6 +183,15 @@ jobs:
             
             echo "Waiting for Lambda function update to complete..."
             aws lambda wait function-updated --function-name "$LAMBDA_NAME" --region "$AWS_REGION"
+            
+            # Sync handler and runtime settings if permissions permit
+            aws lambda update-function-configuration \
+              --function-name "$LAMBDA_NAME" \
+              --handler "lambda_handler.handler" \
+              --timeout 30 \
+              --memory-size 512 \
+              --region "$AWS_REGION" 2>/dev/null || true
+            
             echo "✅ Lambda function '$LAMBDA_NAME' successfully deployed!"
           else
             echo "::warning::Lambda function '$LAMBDA_NAME' does not exist yet. Please create it once using the AWS Console or Setup Guide."
