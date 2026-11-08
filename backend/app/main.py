@@ -109,11 +109,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Jet Freight Logistics - Credit Control CRM", version="1.0.0", lifespan=lifespan)
 
-# Security Headers Middleware
+# Security & CORS Headers Middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     ensure_initialized()
+    if request.method == "OPTIONS":
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Max-Age": "86400",
+            }
+        )
     response: Response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+    response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"

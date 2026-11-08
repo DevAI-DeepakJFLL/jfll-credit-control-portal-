@@ -192,6 +192,12 @@ jobs:
               --memory-size 512 \
               --region "$AWS_REGION" 2>/dev/null || true
             
+            # Configure Function URL CORS at the infrastructure layer
+            aws lambda update-function-url-config \
+              --function-name "$LAMBDA_NAME" \
+              --cors 'AllowOrigins=["*"],AllowMethods=["GET","POST","OPTIONS"],AllowHeaders=["*"],MaxAge=86400' \
+              --region "$AWS_REGION" 2>/dev/null || echo "Notice: Function URL CORS update deferred to AWS Console."
+            
             echo "✅ Lambda function '$LAMBDA_NAME' successfully deployed!"
           else
             echo "::warning::Lambda function '$LAMBDA_NAME' does not exist yet. Please create it once using the AWS Console or Setup Guide."
