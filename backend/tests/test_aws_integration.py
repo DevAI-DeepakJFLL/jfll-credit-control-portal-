@@ -27,6 +27,8 @@ class TestAWSIntegration(unittest.TestCase):
         self.assertFalse(s3_storage.sync_db_to_s3("/tmp/non_existent.db"))
         self.assertFalse(s3_storage.upload_memo_to_s3("memo.docx", "/tmp/non_existent.docx"))
         self.assertFalse(s3_storage.download_memo_from_s3("memo.docx", "/tmp/non_existent.docx"))
+        self.assertFalse(s3_storage.save_appraisal_record_to_s3({"docx_filename": "test.docx"}))
+        self.assertEqual(s3_storage.reconcile_records_from_s3(None), 0)
 
 if __name__ == "__main__":
     unittest.main()

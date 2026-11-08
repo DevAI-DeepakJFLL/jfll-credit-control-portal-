@@ -173,9 +173,6 @@ async def extract_pdf(file: UploadFile = File(...)):
             while chunk := await file.read(1024 * 64): # 64KB chunks
                 size += len(chunk)
                 if size > MAX_UPLOAD_SIZE:
-                    buffer.close()
-                    if os.path.exists(upload_path):
-                        os.remove(upload_path)
                     raise HTTPException(status_code=413, detail="File too large. Maximum upload size is 25MB.")
                 buffer.write(chunk)
             
@@ -188,6 +185,7 @@ async def extract_pdf(file: UploadFile = File(...)):
             logger.error(f"Error parsing PDF {upload_path}: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to parse Rubix PDF. Ensure file is not corrupted or password-protected.")
     finally:
+        await file.close()
         # Cleanup temporary uploaded PDF to prevent unbounded disk growth
         if os.path.exists(upload_path):
             try:
@@ -290,10 +288,3 @@ def get_brand_logo():
             headers={"Cache-Control": "public, max-age=86400, immutable"}
         )
     raise HTTPException(status_code=404, detail="Logo not found")
-
-# AWS Lambda Handler using Mangum ASGI Adapter
-try:
-    from mangum import Mangum
-    handler = Mangum(app, lifespan="off")
-except ImportError:
-    handler = None

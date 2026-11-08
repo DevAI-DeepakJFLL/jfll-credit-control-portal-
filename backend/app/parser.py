@@ -10,6 +10,25 @@ def clean_text(text: str) -> str:
     text = re.sub(r'[ \t]+', ' ', text)
     return text.strip()
 
+_MONTHS = {'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
+           'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'}
+
+def _normalize_date(raw_date: str) -> str:
+    """Converts DD-Mon-YYYY (e.g. 01-Jan-2019) to DD-MM-YYYY (01-01-2019)."""
+    parts = raw_date.strip().split('-')
+    if len(parts) == 3 and parts[1].lower() in _MONTHS:
+        return f"{parts[0]}-{_MONTHS[parts[1].lower()]}-{parts[2]}"
+    return raw_date.strip()
+
+def _format_inr(amount: int) -> str:
+    """Formats an integer rupee amount into the Indian numbering system (e.g. ₹ 10,00,000)."""
+    s = str(amount)
+    if len(s) <= 3:
+        return f"₹ {s}"
+    head, tail = s[:-3], s[-3:]
+    head = re.sub(r'(\d)(?=(\d{2})+$)', r'\1,', head)
+    return f"₹ {head},{tail}"
+
 def parse_rubix_pdf(pdf_path: str) -> Dict[str, Any]:
     reader = pypdf.PdfReader(pdf_path)
     
@@ -70,24 +89,11 @@ def parse_rubix_pdf(pdf_path: str) -> Dict[str, Any]:
         elif 'proprietorship' in type_of_company.lower():
             type_of_company = 'Proprietorship'
 
-    # 4. Date of Incorporation
+    # 4. Date of Incorporation / Registration
     date_of_incorporation = ""
-    m_inc = re.search(r'Date of Incorporation\s+([0-9]{2}-[A-Za-z]{3}-[0-9]{4})', full_text, re.IGNORECASE)
-    if m_inc:
-        raw_date = m_inc.group(1)
-        # Convert e.g. 01-Jan-2019 -> 01-01-2019
-        months = {'Jan':'01', 'Feb':'02', 'Mar':'03', 'Apr':'04', 'May':'05', 'Jun':'06',
-                  'Jul':'07', 'Aug':'08', 'Sep':'09', 'Oct':'10', 'Nov':'11', 'Dec':'12'}
-        parts = raw_date.split('-')
-        if len(parts) == 3 and parts[1].capitalize() in months:
-            date_of_incorporation = f"{parts[0]}-{months[parts[1].capitalize()]}-{parts[2]}"
-        else:
-            date_of_incorporation = raw_date
-    else:
-        # Fallback year or registration
-        m_reg = re.search(r'Date of Registration\s+([0-9]{2}-[A-Za-z]{3}-[0-9]{4})', full_text, re.IGNORECASE)
-        if m_reg:
-            date_of_incorporation = m_reg.group(1)
+    m_date = re.search(r'Date of (?:Incorporation|Registration)\s+([0-9]{2}-[A-Za-z]{3}-[0-9]{4})', full_text, re.IGNORECASE)
+    if m_date:
+        date_of_incorporation = _normalize_date(m_date.group(1))
 
     # 5. Registered Address
     registered_address = ""
@@ -111,21 +117,7 @@ def parse_rubix_pdf(pdf_path: str) -> Dict[str, Any]:
         try:
             rubix_credit_limit_lakhs = float(m_limit.group(1))
             val_rupees = int(round(rubix_credit_limit_lakhs * 100000))
-            # Format Indian currency with commas: O(k) linear time formatting
-            s = str(val_rupees)
-            if len(s) > 3:
-                last3 = s[-3:]
-                remaining = s[:-3]
-                groups = []
-                while len(remaining) > 2:
-                    groups.append(remaining[-2:])
-                    remaining = remaining[:-2]
-                if remaining:
-                    groups.append(remaining)
-                groups.reverse()
-                crif_credit_limit_formatted = "₹ " + ",".join(groups) + "," + last3
-            else:
-                crif_credit_limit_formatted = f"₹ {val_rupees}"
+            crif_credit_limit_formatted = _format_inr(val_rupees)
         except (ValueError, TypeError):
             rubix_credit_limit_lakhs = 0.0
 

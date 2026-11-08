@@ -1,10 +1,17 @@
 import sqlite3
 import os
 import logging
+from datetime import datetime
 from contextlib import contextmanager
 from typing import List, Dict, Any, Optional
 
-from backend.app.s3_storage import sync_db_from_s3, sync_db_to_s3, is_s3_enabled
+from backend.app.s3_storage import (
+    sync_db_from_s3,
+    sync_db_to_s3,
+    is_s3_enabled,
+    save_appraisal_record_to_s3,
+    reconcile_records_from_s3
+)
 
 logger = logging.getLogger("database")
 
@@ -50,14 +57,19 @@ def init_db():
                 salesperson TEXT NOT NULL,
                 type_of_company TEXT,
                 risk_grade TEXT,
-                docx_filename TEXT NOT NULL,
+                docx_filename TEXT NOT NULL UNIQUE,
                 source_pdf TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_customer_name ON appraisals(customer_name);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_created_at ON appraisals(created_at DESC);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_docx_filename ON appraisals(docx_filename);')
         conn.commit()
+
+        # Reconcile any individual remote records written by concurrent serverless containers
+        if is_s3_enabled():
+            reconcile_records_from_s3(conn)
     
     _db_initialized = True
 
@@ -78,23 +90,37 @@ def save_appraisal(
     docx_filename: str,
     source_pdf: Optional[str] = None
 ) -> int:
+    created_at = datetime.now().isoformat()
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO appraisals (
                 customer_name, crif_credit_limit, credit_days, salesperson,
-                type_of_company, risk_grade, docx_filename, source_pdf
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                type_of_company, risk_grade, docx_filename, source_pdf, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             customer_name, crif_credit_limit, credit_days, salesperson,
-            type_of_company, risk_grade, docx_filename, source_pdf
+            type_of_company, risk_grade, docx_filename, source_pdf, created_at
         ))
         conn.commit()
-        last_id = cursor.lastrowid
+        last_id = cursor.lastrowid or 0
     
-    # Push updated database snapshot to S3 in the background if S3 persistence is enabled
+    # Save atomic record to S3 to guarantee multi-instance concurrency safety, then snapshot DB
     if is_s3_enabled():
         try:
+            record_dict = {
+                "id": last_id,
+                "customer_name": customer_name,
+                "crif_credit_limit": crif_credit_limit,
+                "credit_days": credit_days,
+                "salesperson": salesperson,
+                "type_of_company": type_of_company,
+                "risk_grade": risk_grade,
+                "docx_filename": docx_filename,
+                "source_pdf": source_pdf,
+                "created_at": created_at
+            }
+            save_appraisal_record_to_s3(record_dict)
             sync_db_to_s3(DB_PATH)
         except Exception as e:
             logger.warning(f"Non-critical: S3 database sync deferred: {e}")

@@ -7,7 +7,7 @@ import docx
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from backend.app.parser import parse_rubix_pdf
+from backend.app.parser import parse_rubix_pdf, _normalize_date, _format_inr
 from backend.app.generator import build_crif_docx
 from backend.app.database import init_db, save_appraisal, get_all_appraisals
 from backend.app.main import app, prune_storage_files, UPLOADS_DIR, MEMOS_DIR
@@ -222,6 +222,17 @@ class TestCreditControlPipeline(unittest.TestCase):
         self.assertEqual(data["status"], "ok")
         self.assertIn("Auto-deleted after 3 hours", data["retention_policy"]["pdf"])
         self.assertIn("Auto-deleted weekly (7 days)", data["retention_policy"]["docx"])
+
+    def test_normalize_date_and_inr_formatting(self):
+        self.assertEqual(_normalize_date("01-Jan-2019"), "01-01-2019")
+        self.assertEqual(_normalize_date("15-Aug-2022"), "15-08-2022")
+        self.assertEqual(_normalize_date("31-12-2020"), "31-12-2020")
+        
+        self.assertEqual(_format_inr(500), "₹ 500")
+        self.assertEqual(_format_inr(50000), "₹ 50,000")
+        self.assertEqual(_format_inr(357000), "₹ 3,57,000")
+        self.assertEqual(_format_inr(1416000), "₹ 14,16,000")
+        self.assertEqual(_format_inr(12500000), "₹ 1,25,00,000")
 
 if __name__ == '__main__':
     unittest.main()

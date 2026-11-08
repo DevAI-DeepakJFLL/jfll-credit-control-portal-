@@ -27,6 +27,13 @@ def set_cell_borders(cell, top=None, bottom=None, left=None, right=None):
     borders_xml.append('</w:tcBorders>')
     tcPr.append(parse_xml(''.join(borders_xml)))
 
+_LOGO_CANDIDATES = [
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "jfll-logo.jpeg")),
+    os.path.abspath("jfll-logo.jpeg"),
+    os.path.abspath("frontend/public/jfll-logo.jpeg"),
+]
+_RESOLVED_LOGO_PATH = next((p for p in _LOGO_CANDIDATES if os.path.exists(p)), None)
+
 def build_crif_docx(data: Dict[str, Any], output_path: str):
     doc = docx.Document()
     
@@ -43,12 +50,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     normal_style.font.color.rgb = RGBColor(30, 41, 59)
     
     # 1. Header Banner
-    logo_candidates = [
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "jfll-logo.jpeg")),
-        os.path.abspath("jfll-logo.jpeg"),
-        os.path.abspath("frontend/public/jfll-logo.jpeg"),
-    ]
-    logo_path = next((p for p in logo_candidates if os.path.exists(p)), None)
+    logo_path = _RESOLVED_LOGO_PATH if (_RESOLVED_LOGO_PATH and os.path.exists(_RESOLVED_LOGO_PATH)) else next((p for p in _LOGO_CANDIDATES if os.path.exists(p)), None)
 
     cols = 3 if logo_path else 2
     header_table = doc.add_table(rows=1, cols=cols)
