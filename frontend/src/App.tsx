@@ -5,6 +5,7 @@ import { MetricCards } from './components/MetricCards';
 import { MemoForm } from './components/MemoForm';
 import { AppraisalHistory } from './components/AppraisalHistory';
 import { RubixExtractedData } from './types';
+import { apiUrl } from './config/api';
 import { CheckCircle2, X, AlertCircle } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -22,7 +23,7 @@ export const App: React.FC = () => {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/extract', {
+      const res = await fetch(apiUrl('/api/extract'), {
         method: 'POST',
         body: formData,
       });
@@ -66,7 +67,7 @@ export const App: React.FC = () => {
         caf_signed: extractedData.caf_signed,
       };
 
-      const res = await fetch('/api/generate', {
+      const res = await fetch(apiUrl('/api/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -81,7 +82,7 @@ export const App: React.FC = () => {
 
       // Trigger automatic browser download
       const link = document.createElement('a');
-      link.href = result.download_url;
+      link.href = apiUrl(result.download_url);
       link.download = result.filename;
       document.body.appendChild(link);
       link.click();

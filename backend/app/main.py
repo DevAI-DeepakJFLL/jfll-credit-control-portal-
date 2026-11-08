@@ -13,18 +13,34 @@ from backend.app.models import RubixExtractedData, GenerateDocxRequest
 from backend.app.parser import parse_rubix_pdf
 from backend.app.generator import build_crif_docx
 from backend.app.database import init_db, save_appraisal, get_all_appraisals, get_appraisal_by_id, get_appraisals_count
+from backend.app.s3_storage import upload_memo_to_s3, download_memo_from_s3, is_s3_enabled
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("credit_crm")
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT_DIR = os.path.dirname(BACKEND_DIR)
-STORAGE_DIR = os.path.join(BACKEND_DIR, 'storage')
-UPLOADS_DIR = os.path.join(STORAGE_DIR, 'uploads')
-MEMOS_DIR = os.path.join(STORAGE_DIR, 'memos')
 
-os.makedirs(UPLOADS_DIR, exist_ok=True)
-os.makedirs(MEMOS_DIR, exist_ok=True)
+# Detect AWS Lambda environment where only /tmp is writable
+is_lambda = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"))
+DEFAULT_STORAGE_DIR = "/tmp/credit_crm/storage" if is_lambda else os.path.join(BACKEND_DIR, 'storage')
+STORAGE_DIR = os.getenv("STORAGE_DIR", DEFAULT_STORAGE_DIR)
+UPLOADS_DIR = os.getenv("UPLOADS_DIR", os.path.join(STORAGE_DIR, 'uploads'))
+MEMOS_DIR = os.getenv("MEMOS_DIR", os.path.join(STORAGE_DIR, 'memos'))
+
+_initialized = False
+
+def ensure_initialized():
+    """Guarantees directories and database tables exist across both serverful and serverless runtimes."""
+    global _initialized
+    if not _initialized:
+        os.makedirs(UPLOADS_DIR, exist_ok=True)
+        os.makedirs(MEMOS_DIR, exist_ok=True)
+        init_db()
+        _initialized = True
+
+# Immediate initialization pass
+ensure_initialized()
 
 # Retention Policies:
 # - Auto-delete PDFs from storage every 3 hours
@@ -66,7 +82,7 @@ def prune_storage_files():
     return {"pruned_pdfs": pruned_pdfs, "pruned_docs": pruned_docs}
 
 async def storage_cleanup_worker():
-    """Continuous background worker running periodic retention cleanup."""
+    """Continuous background worker running periodic retention cleanup (server mode)."""
     while True:
         try:
             prune_storage_files()
@@ -76,23 +92,27 @@ async def storage_cleanup_worker():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    ensure_initialized()
     # Initial cleanup pass on server start
     prune_storage_files()
-    # Start background cleanup worker
-    cleanup_task = asyncio.create_task(storage_cleanup_worker())
+    # In long-running server environments (Docker / EC2), run periodic retention loop
+    cleanup_task = None
+    if not is_lambda:
+        cleanup_task = asyncio.create_task(storage_cleanup_worker())
     yield
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
 
 app = FastAPI(title="Jet Freight Logistics - Credit Control CRM", version="1.0.0", lifespan=lifespan)
 
 # Security Headers Middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
+    ensure_initialized()
     response: Response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -118,10 +138,17 @@ PDF_MAGIC_BYTES = b"%PDF-"
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "Jet Freight Logistics Credit CRM", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "ok",
+        "app": "Jet Freight Logistics Credit CRM",
+        "timestamp": datetime.now().isoformat(),
+        "runtime": "AWS Lambda" if is_lambda else "Standard Container/Server",
+        "s3_persistence": is_s3_enabled()
+    }
 
 @app.post("/api/extract", response_model=RubixExtractedData)
 async def extract_pdf(file: UploadFile = File(...)):
+    ensure_initialized()
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files are supported.")
     
@@ -167,6 +194,7 @@ async def extract_pdf(file: UploadFile = File(...)):
 
 @app.post("/api/generate")
 async def generate_docx(req: GenerateDocxRequest):
+    ensure_initialized()
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         clean_name = "".join(c for c in req.customer_name if c.isalnum() or c in (' ', '_', '-')).strip() or "CUSTOMER"
@@ -176,6 +204,10 @@ async def generate_docx(req: GenerateDocxRequest):
         # Prepare dict for generator
         payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
         build_crif_docx(payload, output_path)
+        
+        # Backup generated DOCX memo to S3 bucket if configured
+        if is_s3_enabled():
+            upload_memo_to_s3(filename, output_path)
         
         appraisal_id = save_appraisal(
             customer_name=req.customer_name,
@@ -200,15 +232,21 @@ async def generate_docx(req: GenerateDocxRequest):
 
 @app.api_route("/api/download/{appraisal_id}", methods=["GET", "HEAD"])
 def download_docx(appraisal_id: int):
+    ensure_initialized()
     record = get_appraisal_by_id(appraisal_id)
     if not record:
         raise HTTPException(status_code=404, detail="Appraisal record not found")
         
     file_path = os.path.join(MEMOS_DIR, record['docx_filename'])
     if not os.path.exists(file_path):
+        # Attempt to pull from S3 if running in stateless container or after local purge
+        if is_s3_enabled():
+            download_memo_from_s3(record['docx_filename'], file_path)
+    
+    if not os.path.exists(file_path):
         raise HTTPException(
             status_code=404,
-            detail="Document has expired and been removed per the weekly retention policy."
+            detail="Document has expired and been removed per retention policy."
         )
         
     return FileResponse(
@@ -219,6 +257,7 @@ def download_docx(appraisal_id: int):
 
 @app.post("/api/maintenance/cleanup")
 def trigger_maintenance_cleanup():
+    ensure_initialized()
     stats = prune_storage_files()
     return {
         "status": "ok",
@@ -232,6 +271,7 @@ def trigger_maintenance_cleanup():
 
 @app.get("/api/appraisals")
 def list_appraisals(response: Response, limit: int = 200, offset: int = 0):
+    ensure_initialized()
     total = get_appraisals_count()
     response.headers["X-Total-Count"] = str(total)
     return get_all_appraisals(limit=min(limit, 500), offset=max(0, offset))
@@ -247,3 +287,10 @@ def get_brand_logo():
             headers={"Cache-Control": "public, max-age=86400, immutable"}
         )
     raise HTTPException(status_code=404, detail="Logo not found")
+
+# AWS Lambda Handler using Mangum ASGI Adapter
+try:
+    from mangum import Mangum
+    handler = Mangum(app, lifespan="off")
+except ImportError:
+    handler = None

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useDeferredValue } from 'react';
 import { Download, Search, FileText, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AppraisalRecord } from '../types';
+import { apiUrl } from '../config/api';
 
 export const AppraisalHistory: React.FC = () => {
   const [appraisals, setAppraisals] = useState<AppraisalRecord[]>([]);
@@ -19,7 +20,7 @@ export const AppraisalHistory: React.FC = () => {
     try {
       setLoading(true);
       setFetchError(null);
-      const res = await fetch('/api/appraisals');
+      const res = await fetch(apiUrl('/api/appraisals'));
       if (!res.ok) {
         throw new Error('Failed to retrieve credit records from server');
       }
@@ -156,7 +157,7 @@ export const AppraisalHistory: React.FC = () => {
                     <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">{item.created_at}</td>
                     <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       <a
-                        href={`/api/download/${item.id}`}
+                        href={apiUrl(`/api/download/${item.id}`)}
                         download
                         aria-label={`Download Credit Memo for ${item.customer_name}`}
                         title={`Download Credit Memo (.docx) for ${item.customer_name}`}

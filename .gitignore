@@ -21,6 +21,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.zip
+lambda_artifact.zip
 
 # Virtual Environments
 venv/

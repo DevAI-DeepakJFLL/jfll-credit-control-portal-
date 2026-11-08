@@ -1,9 +1,20 @@
 import sqlite3
 import os
+import logging
 from contextlib import contextmanager
 from typing import List, Dict, Any, Optional
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'storage', 'appraisals.db')
+from backend.app.s3_storage import sync_db_from_s3, sync_db_to_s3, is_s3_enabled
+
+logger = logging.getLogger("database")
+
+# Support configurable paths for AWS Lambda (/tmp only), Docker volumes, and local development
+is_lambda = bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"))
+DEFAULT_STORAGE_DIR = "/tmp/credit_crm/storage" if is_lambda else os.path.join(os.path.dirname(os.path.dirname(__file__)), 'storage')
+STORAGE_DIR = os.getenv("STORAGE_DIR", DEFAULT_STORAGE_DIR)
+DB_PATH = os.getenv("DATABASE_PATH", os.path.join(STORAGE_DIR, 'appraisals.db'))
+
+_db_initialized = False
 
 @contextmanager
 def get_db():
@@ -16,9 +27,19 @@ def get_db():
         conn.close()
 
 def init_db():
+    global _db_initialized
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    
+    # Restore database from S3 if running in serverless and DB doesn't exist yet
+    if not os.path.exists(DB_PATH) and is_s3_enabled():
+        sync_db_from_s3(DB_PATH)
+
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('PRAGMA journal_mode=WAL;')
+        try:
+            cursor.execute('PRAGMA journal_mode=WAL;')
+        except sqlite3.OperationalError:
+            pass
         cursor.execute('PRAGMA busy_timeout=5000;')
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS appraisals (
@@ -37,6 +58,8 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_customer_name ON appraisals(customer_name);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_created_at ON appraisals(created_at DESC);')
         conn.commit()
+    
+    _db_initialized = True
 
 def get_appraisals_count() -> int:
     with get_db() as conn:
@@ -67,7 +90,16 @@ def save_appraisal(
             type_of_company, risk_grade, docx_filename, source_pdf
         ))
         conn.commit()
-        return cursor.lastrowid
+        last_id = cursor.lastrowid
+    
+    # Push updated database snapshot to S3 in the background if S3 persistence is enabled
+    if is_s3_enabled():
+        try:
+            sync_db_to_s3(DB_PATH)
+        except Exception as e:
+            logger.warning(f"Non-critical: S3 database sync deferred: {e}")
+            
+    return last_id
 
 def get_all_appraisals(limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
     with get_db() as conn:

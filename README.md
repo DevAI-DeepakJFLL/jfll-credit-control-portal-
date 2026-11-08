@@ -71,7 +71,18 @@ This single command starts both servers automatically:
 
 ---
 
-### Option B: Step-by-Step Manual Launch
+### Option B: Docker Compose (Local or EC2)
+Launch the complete containerized stack (FastAPI backend + Nginx reverse proxy serving built React assets):
+
+```bash
+docker compose up -d --build
+```
+
+Access the portal directly at [http://localhost](http://localhost) (Port 80).
+
+---
+
+### Option C: Step-by-Step Manual Launch
 
 #### 1. Start the Backend API (Python)
 ```bash
@@ -114,24 +125,31 @@ Open your browser to `http://localhost:3000`.
 
 ```text
 jfll-credit-control-portal/
+├── .github/workflows/
+│   └── deploy.yml             # Automated CI/CD pipeline for AWS Free Tier
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # FastAPI endpoints, security headers, cleanup worker
 │   │   ├── models.py          # Pydantic schemas (KYC, Extraction, Memo requests)
 │   │   ├── parser.py          # Deterministic Rubix PDF text & regex extractor
 │   │   ├── generator.py       # Custom XML-formatted Word document (.docx) builder
-│   │   └── database.py        # SQLite connection manager, WAL mode, B-Tree indexes
+│   │   ├── database.py        # SQLite connection manager, WAL mode, B-Tree indexes
+│   │   └── s3_storage.py      # Seamless AWS S3 synchronization for DB & documents
 │   ├── requirements.txt       # Core Python dependencies
+│   ├── requirements-lambda.txt# Stripped dependencies for AWS Lambda serverless
+│   ├── Dockerfile             # Production Python container (non-root appuser)
 │   ├── storage/
 │   │   ├── memos/             # Generated CRIF memoranda (.docx) [Auto-purged weekly]
 │   │   └── uploads/           # Ephemeral uploaded PDFs [Auto-purged every 3 hours]
 │   └── tests/
 │       ├── fixtures/          # Anonymized sample test PDFs
-│       └── test_pipeline.py   # 13 comprehensive unit & API integration tests
+│       ├── test_pipeline.py   # 13 comprehensive unit & API integration tests
+│       └── test_aws_integration.py # 3 AWS Lambda & S3 fallback integration tests
 │
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx            # Main application layout, state & keyboard shortcuts
+│   │   ├── config/api.ts      # Cloud-aware API configuration helper
 │   │   ├── components/
 │   │   │   ├── Navbar.tsx            # Corporate navigation header & tab switcher
 │   │   │   ├── FileUpload.tsx        # Drag-and-drop PDF dropzone
@@ -139,14 +157,33 @@ jfll-credit-control-portal/
 │   │   │   ├── MemoForm.tsx          # Multi-section underwriting & KYC checklist form
 │   │   │   └── AppraisalHistory.tsx  # Paginated audit trail with deferred search
 │   │   └── types.ts           # Shared TypeScript interfaces
+│   ├── Dockerfile             # Multi-stage production build with Nginx
 │   ├── package.json           # React 18, Vite, Lucide Icons, Tailwind CSS
 │   └── vite.config.ts         # Fast HMR Vite development server
 │
+├── nginx/
+│   └── default.conf           # Reverse proxy routing /api/ and serving static SPA
+├── docs/
+│   └── AWS_DEPLOYMENT_GUIDE.md# Complete step-by-step AWS Free Tier setup walkthrough
+├── lambda_handler.py          # Mangum serverless entrypoint for AWS Lambda
+├── docker-compose.yml         # Container orchestration for local / EC2 deployment
 ├── jfll-logo.jpeg             # Jet Freight Logistics official corporate emblem
 ├── run.sh                     # 1-click startup automation script
+├── .dockerignore              # Clean container build exclusions
 ├── .gitignore                 # Enterprise-grade exclusions for clean GitHub repository
 └── README.md                  # This documentation guide
 ```
+
+---
+
+## ☁️ AWS Free Tier Deployment ($0/month)
+
+This application is built for **100% Free Tier deployment** using AWS Serverless services:
+* **Frontend:** Amazon S3 + Amazon CloudFront (Always Free: 1TB transfer, 10M requests)
+* **Backend:** AWS Lambda via Mangum ASGI adapter (Always Free: 1M requests, 3.2M sec compute)
+* **Persistence:** Amazon S3 for `appraisals.db` snapshots & generated CAM memos
+
+👉 **Read the complete step-by-step guide:** [`docs/AWS_DEPLOYMENT_GUIDE.md`](./docs/AWS_DEPLOYMENT_GUIDE.md)
 
 ---
 
@@ -166,25 +203,30 @@ jfll-credit-control-portal/
 Run the full automated test suite (verifying PDF parsing, Word generation, SQLite concurrency, and API contracts):
 
 ```bash
-python3 -m unittest backend/tests/test_pipeline.py
+python3 -m unittest discover backend/tests -v
 ```
 
 Expected output:
 ```text
-Ran 13 tests in 4.95s — OK
+Ran 16 tests in 3.52s — OK
 ```
 
 ---
 
 ## 🌐 Production Environment Configuration
 
-When deploying to Docker, AWS, or an enterprise cloud provider, the application supports standard environment variables:
+When deploying to Docker, AWS Lambda, or an enterprise cloud provider, the application supports standard environment variables:
 
 | Variable | Default | Purpose |
 | :--- | :--- | :--- |
-| `PORT` | `8001` | Port for the FastAPI backend service |
-| `FRONTEND_PORT` | `3000` | Port for the frontend interface |
+| `AWS_REGION` | `ap-southeast-2` | AWS Region for S3 and Lambda resources |
+| `S3_DATA_BUCKET` | *(optional)* | S3 bucket name for persistent DB snapshots & memos |
+| `S3_FRONTEND_BUCKET` | *(optional)* | S3 bucket for React static assets |
+| `LAMBDA_FUNCTION_NAME`| `jfll-credit-portal-api` | AWS Lambda function name |
+| `CLOUDFRONT_DISTRIBUTION_ID` | *(optional)* | CloudFront distribution ID for cache invalidation |
+| `VITE_API_BASE_URL` | *(empty)* | Base URL for API (empty when routed through CloudFront / Nginx) |
 | `ALLOWED_ORIGINS` | `*` | Comma-separated list of allowed domains (e.g. `https://credit.jetfreight.com`) |
+| `STORAGE_DIR` | `backend/storage` | Directory for local file storage (`/tmp` in Lambda) |
 
 ---
 

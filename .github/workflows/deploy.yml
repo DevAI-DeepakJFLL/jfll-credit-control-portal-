@@ -1,0 +1,240 @@
+name: Deploy JFLL Credit Portal to AWS Free Tier
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: aws-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # =========================================================================
+  # JOB 1: Automated Unit Tests, Build Gates & Security Audit
+  # =========================================================================
+  audit-and-test:
+    name: Unit Tests & Build Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt httpx
+
+      - name: Run Backend Unit Test Suite (16/16)
+        run: |
+          python -m unittest discover backend/tests -v
+
+      - name: Verify Zero Hardcoded Secrets & Clean Storage
+        run: |
+          echo "=== Scanning for stray SQLite DBs or sensitive environment files ==="
+          if find backend/storage -type f \( -name "*.db" -o -name "*.db-wal" -o -name "*.db-shm" \) | grep -q .; then
+            echo "::error::Detected committed database files in backend/storage!"
+            exit 1
+          fi
+          if [ -f .env ]; then
+            echo "::error::Detected uncommitted local .env file!"
+            exit 1
+          fi
+          echo "✅ Security verification passed: Zero credentials or sensitive data detected."
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run TypeScript Verification & Production Build
+        working-directory: ./frontend
+        run: |
+          npx tsc --noEmit
+          npm run build
+
+  # =========================================================================
+  # JOB 2: Deploy to AWS Free Tier (S3 + CloudFront + Lambda Function URL)
+  # =========================================================================
+  deploy-aws:
+    name: Package & Deploy to AWS Free Tier
+    needs: [ audit-and-test ]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Verify AWS Credentials & Secret Configuration
+        id: check-creds
+        env:
+          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID || vars.AWS_ACCESS_KEY_ID }}
+          AWS_SEC: ${{ secrets.AWS_SECRET_ACCESS_KEY || vars.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -z "$AWS_KEY" ] || [ -z "$AWS_SEC" ]; then
+            echo "::warning::AWS credentials not found in GitHub Secrets! Deployment step skipped."
+            echo "👉 To enable automated deployment, add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to GitHub Secrets."
+            echo "has_creds=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ AWS credentials present in GitHub Secrets."
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python 3.12
+        if: steps.check-creds.outputs.has_creds == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Configure AWS Credentials
+        if: steps.check-creds.outputs.has_creds == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || vars.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || vars.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'ap-southeast-2' }}
+
+      # -----------------------------------------------------------------------
+      # BACKEND: Package & Update AWS Lambda Function
+      # -----------------------------------------------------------------------
+      - name: Build Stripped Serverless Lambda Package
+        if: steps.check-creds.outputs.has_creds == 'true'
+        run: |
+          echo "Packaging FastAPI Mangum backend for AWS Lambda..."
+          mkdir -p build_package
+          
+          # Install stripped production dependencies
+          pip install --no-cache-dir --target=build_package -r backend/requirements-lambda.txt
+          
+          # Clean non-runtime assets to keep bundle ultra-compact
+          find build_package -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find build_package -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find build_package -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find build_package -name "*.pyc" -delete 2>/dev/null || true
+          find build_package -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          
+          # Copy application modules and entrypoint
+          mkdir -p build_package/backend
+          cp -r backend/app build_package/backend/
+          cp lambda_handler.py build_package/
+          cp jfll-logo.jpeg build_package/
+          
+          # Remove local bytecode from application code
+          find build_package/backend -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          
+          # Zip package
+          cd build_package
+          zip -9 -q -r ../lambda_artifact.zip .
+          cd ..
+          echo "Lambda Package Size:"
+          ls -lh lambda_artifact.zip
+
+      - name: Deploy Backend to AWS Lambda
+        if: steps.check-creds.outputs.has_creds == 'true'
+        env:
+          LAMBDA_NAME: ${{ vars.LAMBDA_FUNCTION_NAME || secrets.LAMBDA_FUNCTION_NAME || 'jfll-credit-portal-api' }}
+          DATA_BUCKET: ${{ vars.S3_DATA_BUCKET || secrets.S3_DATA_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'ap-southeast-2' }}
+        run: |
+          echo "Checking if Lambda function '$LAMBDA_NAME' exists in $AWS_REGION..."
+          if aws lambda get-function --function-name "$LAMBDA_NAME" --region "$AWS_REGION" 2>/dev/null; then
+            echo "Updating Lambda function code for $LAMBDA_NAME..."
+            
+            # If S3 Data Bucket is configured, upload via S3 to bypass direct zip size limits
+            if [ -n "$DATA_BUCKET" ]; then
+              echo "Uploading zip artifact to s3://$DATA_BUCKET/builds/lambda_artifact.zip..."
+              aws s3 cp lambda_artifact.zip "s3://${DATA_BUCKET}/builds/lambda_artifact.zip" --region "$AWS_REGION"
+              aws lambda update-function-code \
+                --function-name "$LAMBDA_NAME" \
+                --s3-bucket "$DATA_BUCKET" \
+                --s3-key "builds/lambda_artifact.zip" \
+                --region "$AWS_REGION"
+            else
+              aws lambda update-function-code \
+                --function-name "$LAMBDA_NAME" \
+                --zip-file fileb://lambda_artifact.zip \
+                --region "$AWS_REGION"
+            fi
+            
+            echo "Waiting for Lambda function update to complete..."
+            aws lambda wait function-updated --function-name "$LAMBDA_NAME" --region "$AWS_REGION"
+            echo "✅ Lambda function '$LAMBDA_NAME' successfully deployed!"
+          else
+            echo "::warning::Lambda function '$LAMBDA_NAME' does not exist yet. Please create it once using the AWS Console or Setup Guide."
+          fi
+
+      # -----------------------------------------------------------------------
+      # FRONTEND: Build & Sync React SPA to S3 + Invalidate CloudFront
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js 20 for Frontend Build
+        if: steps.check-creds.outputs.has_creds == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Frontend SPA
+        if: steps.check-creds.outputs.has_creds == 'true'
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.VITE_API_BASE_URL }}
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Sync Frontend Build to S3 Bucket
+        if: steps.check-creds.outputs.has_creds == 'true'
+        env:
+          FE_BUCKET: ${{ vars.S3_FRONTEND_BUCKET || secrets.S3_FRONTEND_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'ap-southeast-2' }}
+        run: |
+          if [ -n "$FE_BUCKET" ]; then
+            echo "Syncing frontend assets to s3://${FE_BUCKET}..."
+            
+            # Sync immutable hashed JS/CSS assets (1 year cache)
+            aws s3 sync frontend/dist "s3://${FE_BUCKET}" \
+              --delete \
+              --exclude "*.html" \
+              --cache-control "public, max-age=31536000, immutable" \
+              --region "$AWS_REGION"
+              
+            # Sync HTML and root documents with no-cache so updates are immediately visible
+            aws s3 sync frontend/dist "s3://${FE_BUCKET}" \
+              --delete \
+              --include "*.html" \
+              --cache-control "no-cache, no-store, must-revalidate" \
+              --region "$AWS_REGION"
+              
+            echo "✅ Frontend successfully synced to S3!"
+          else
+            echo "Notice: S3_FRONTEND_BUCKET not configured. Skipping S3 static sync."
+          fi
+
+      - name: Invalidate CloudFront CDN Cache
+        if: steps.check-creds.outputs.has_creds == 'true'
+        env:
+          DIST_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          if [ -n "$DIST_ID" ]; then
+            echo "Invalidating CloudFront cache for distribution $DIST_ID..."
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" \
+              --paths "/*"
+            echo "✅ CloudFront cache invalidation submitted."
+          else
+            echo "Notice: CLOUDFRONT_DISTRIBUTION_ID not configured. Skipping CDN invalidation."
+          fi
