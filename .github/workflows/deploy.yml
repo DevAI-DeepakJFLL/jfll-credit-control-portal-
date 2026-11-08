@@ -147,24 +147,32 @@ jobs:
       - name: Deploy Backend to AWS Lambda
         if: steps.check-creds.outputs.has_creds == 'true'
         env:
-          LAMBDA_NAME: ${{ vars.LAMBDA_FUNCTION_NAME || secrets.LAMBDA_FUNCTION_NAME || 'jfll-credit-portal-api' }}
-          DATA_BUCKET: ${{ vars.S3_DATA_BUCKET || secrets.S3_DATA_BUCKET }}
+          LAMBDA_NAME: ${{ vars.LAMBDA_FUNCTION_NAME || secrets.LAMBDA_FUNCTION_NAME || vars.AWS_LAMBDA_FUNCTION_NAME || secrets.AWS_LAMBDA_FUNCTION_NAME || 'jfll-credit-portal-api' }}
+          RAW_DATA_BUCKET: ${{ vars.S3_DATA_BUCKET || secrets.S3_DATA_BUCKET || vars.S3_BUCKET_NAME || secrets.S3_BUCKET_NAME }}
           AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'ap-southeast-2' }}
         run: |
+          DATA_BUCKET=$(echo "$RAW_DATA_BUCKET" | sed 's|^s3://||' | tr -d ' ')
           echo "Checking if Lambda function '$LAMBDA_NAME' exists in $AWS_REGION..."
           if aws lambda get-function --function-name "$LAMBDA_NAME" --region "$AWS_REGION" 2>/dev/null; then
             echo "Updating Lambda function code for $LAMBDA_NAME..."
             
-            # If S3 Data Bucket is configured, upload via S3 to bypass direct zip size limits
+            # If S3 Data Bucket is configured and accessible, upload via S3 to bypass direct zip size limits
+            UPLOADED_VIA_S3=false
             if [ -n "$DATA_BUCKET" ]; then
-              echo "Uploading zip artifact to s3://$DATA_BUCKET/builds/lambda_artifact.zip..."
-              aws s3 cp lambda_artifact.zip "s3://${DATA_BUCKET}/builds/lambda_artifact.zip" --region "$AWS_REGION"
-              aws lambda update-function-code \
-                --function-name "$LAMBDA_NAME" \
-                --s3-bucket "$DATA_BUCKET" \
-                --s3-key "builds/lambda_artifact.zip" \
-                --region "$AWS_REGION"
-            else
+              echo "Attempting upload to s3://$DATA_BUCKET/builds/lambda_artifact.zip..."
+              if aws s3 cp lambda_artifact.zip "s3://${DATA_BUCKET}/builds/lambda_artifact.zip" --region "$AWS_REGION" 2>/dev/null; then
+                aws lambda update-function-code \
+                  --function-name "$LAMBDA_NAME" \
+                  --s3-bucket "$DATA_BUCKET" \
+                  --s3-key "builds/lambda_artifact.zip" \
+                  --region "$AWS_REGION"
+                UPLOADED_VIA_S3=true
+              else
+                echo "Notice: Could not upload to S3 bucket '$DATA_BUCKET' (bucket might not exist yet). Falling back to direct zip upload..."
+              fi
+            fi
+            
+            if [ "$UPLOADED_VIA_S3" = "false" ]; then
               aws lambda update-function-code \
                 --function-name "$LAMBDA_NAME" \
                 --zip-file fileb://lambda_artifact.zip \
@@ -190,7 +198,7 @@ jobs:
       - name: Build Frontend SPA
         if: steps.check-creds.outputs.has_creds == 'true'
         env:
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.VITE_API_BASE_URL }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.VITE_API_BASE_URL || vars.NEXT_PUBLIC_API_URL }}
         working-directory: ./frontend
         run: |
           npm ci
@@ -199,10 +207,23 @@ jobs:
       - name: Sync Frontend Build to S3 Bucket
         if: steps.check-creds.outputs.has_creds == 'true'
         env:
-          FE_BUCKET: ${{ vars.S3_FRONTEND_BUCKET || secrets.S3_FRONTEND_BUCKET }}
+          RAW_FE_BUCKET: ${{ vars.S3_FRONTEND_BUCKET || secrets.S3_FRONTEND_BUCKET || vars.AWS_S3_BUCKET_NAME || secrets.AWS_S3_BUCKET_NAME }}
           AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'ap-southeast-2' }}
         run: |
+          FE_BUCKET=$(echo "$RAW_FE_BUCKET" | sed 's|^s3://||' | tr -d ' ')
           if [ -n "$FE_BUCKET" ]; then
+            echo "Target S3 Bucket: $FE_BUCKET in region $AWS_REGION"
+            
+            # Verify if bucket exists
+            if ! aws s3 ls "s3://${FE_BUCKET}" --region "$AWS_REGION" > /dev/null 2>&1; then
+              echo "::error::Cannot list objects in s3://${FE_BUCKET} in region $AWS_REGION!"
+              echo "👉 Please verify that:"
+              echo "   1. The bucket '$FE_BUCKET' was created in AWS S3."
+              echo "   2. The bucket is located in region '$AWS_REGION'."
+              echo "   3. Your IAM credentials have 's3:ListBucket' and 's3:PutObject' permissions for this bucket."
+              exit 1
+            fi
+            
             echo "Syncing frontend assets to s3://${FE_BUCKET}..."
             
             # Sync immutable hashed JS/CSS assets (1 year cache)
@@ -221,14 +242,15 @@ jobs:
               
             echo "✅ Frontend successfully synced to S3!"
           else
-            echo "Notice: S3_FRONTEND_BUCKET not configured. Skipping S3 static sync."
+            echo "::warning::S3_FRONTEND_BUCKET not configured in GitHub Secrets/Variables. Skipping S3 static sync."
           fi
 
       - name: Invalidate CloudFront CDN Cache
         if: steps.check-creds.outputs.has_creds == 'true'
         env:
-          DIST_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+          RAW_DIST_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID || vars.AWS_CLOUDFRONT_DISTRIBUTION_ID || secrets.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
         run: |
+          DIST_ID=$(echo "$RAW_DIST_ID" | tr -d ' ')
           if [ -n "$DIST_ID" ]; then
             echo "Invalidating CloudFront cache for distribution $DIST_ID..."
             aws cloudfront create-invalidation \
