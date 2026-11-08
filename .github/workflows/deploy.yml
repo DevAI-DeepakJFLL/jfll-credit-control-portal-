@@ -192,10 +192,10 @@ jobs:
               --memory-size 512 \
               --region "$AWS_REGION" 2>/dev/null || true
             
-            # Configure Function URL CORS at the infrastructure layer
+            # Configure Function URL CORS at the infrastructure layer (restricted to CloudFront and local dev)
             aws lambda update-function-url-config \
               --function-name "$LAMBDA_NAME" \
-              --cors 'AllowOrigins=["*"],AllowMethods=["GET","POST","OPTIONS"],AllowHeaders=["*"],MaxAge=86400' \
+              --cors 'AllowOrigins=["https://d1whr25asi79gg.cloudfront.net","http://localhost:3000","http://127.0.0.1:3000"],AllowMethods=["GET","POST","OPTIONS"],AllowHeaders=["*"],MaxAge=86400' \
               --region "$AWS_REGION" 2>/dev/null || echo "Notice: Function URL CORS update deferred to AWS Console."
             
             echo "✅ Lambda function '$LAMBDA_NAME' successfully deployed!"

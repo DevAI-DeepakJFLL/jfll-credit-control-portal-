@@ -1,10 +1,12 @@
 import os
 import time
+import secrets
 import asyncio
 import logging
 from datetime import datetime
+from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
@@ -12,7 +14,14 @@ from fastapi.responses import FileResponse, Response
 from backend.app.models import RubixExtractedData, GenerateDocxRequest
 from backend.app.parser import parse_rubix_pdf
 from backend.app.generator import build_crif_docx
-from backend.app.database import init_db, save_appraisal, get_all_appraisals, get_appraisal_by_id, get_appraisals_count
+from backend.app.database import (
+    init_db,
+    save_appraisal,
+    get_all_appraisals,
+    get_appraisal_by_id,
+    get_appraisal_by_token_or_id,
+    get_appraisals_count
+)
 from backend.app.s3_storage import upload_memo_to_s3, download_memo_from_s3, is_s3_enabled
 
 logging.basicConfig(level=logging.INFO)
@@ -118,6 +127,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 # CORS setup for local development and container deployments.
@@ -210,6 +220,9 @@ async def generate_docx(req: GenerateDocxRequest):
         if is_s3_enabled():
             upload_memo_to_s3(filename, output_path)
         
+        # Generate unguessable download access token to prevent sequential ID enumeration
+        access_token = secrets.token_urlsafe(16)
+        
         appraisal_id = save_appraisal(
             customer_name=req.customer_name,
             crif_credit_limit=req.crif_credit_limit,
@@ -218,23 +231,25 @@ async def generate_docx(req: GenerateDocxRequest):
             type_of_company=req.type_of_company,
             risk_grade=req.risk_grade_score,
             docx_filename=filename,
-            source_pdf=req.source_pdf
+            source_pdf=req.source_pdf,
+            access_token=access_token
         )
         
         return {
             "success": True,
             "appraisal_id": appraisal_id,
+            "access_token": access_token,
             "filename": filename,
-            "download_url": f"/api/download/{appraisal_id}"
+            "download_url": f"/api/download/{access_token}"
         }
     except Exception as e:
         logger.error(f"Failed to generate CRIF docx: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate CRIF memorandum document.")
 
-@app.api_route("/api/download/{appraisal_id}", methods=["GET", "HEAD"])
-def download_docx(appraisal_id: int):
+@app.api_route("/api/download/{identifier}", methods=["GET", "HEAD"])
+def download_docx(identifier: str):
     ensure_initialized()
-    record = get_appraisal_by_id(appraisal_id)
+    record = get_appraisal_by_token_or_id(identifier)
     if not record:
         raise HTTPException(status_code=404, detail="Appraisal record not found")
         
@@ -256,9 +271,13 @@ def download_docx(appraisal_id: int):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
+ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "").strip()
+
 @app.post("/api/maintenance/cleanup")
-def trigger_maintenance_cleanup():
+def trigger_maintenance_cleanup(x_admin_key: Optional[str] = Header(None)):
     ensure_initialized()
+    if ADMIN_SECRET_KEY and x_admin_key != ADMIN_SECRET_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing X-Admin-Key")
     stats = prune_storage_files()
     return {
         "status": "ok",

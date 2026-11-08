@@ -143,11 +143,17 @@ class TestCreditControlPipeline(unittest.TestCase):
         data = res.json()
         self.assertTrue(data["success"])
         self.assertIn("appraisal_id", data)
+        self.assertIn("access_token", data)
 
-        # Test download
+        # Test download with secure access_token
         dl_res = client.get(data["download_url"])
         self.assertEqual(dl_res.status_code, 200)
         self.assertGreater(len(dl_res.content), 5000)
+
+        # Test backwards compatibility with numeric ID
+        dl_res_id = client.get(f"/api/download/{data['appraisal_id']}")
+        self.assertEqual(dl_res_id.status_code, 200)
+        self.assertGreater(len(dl_res_id.content), 5000)
 
     def test_api_download_not_found(self):
         client = TestClient(app)
@@ -222,6 +228,33 @@ class TestCreditControlPipeline(unittest.TestCase):
         self.assertEqual(data["status"], "ok")
         self.assertIn("Auto-deleted after 3 hours", data["retention_policy"]["pdf"])
         self.assertIn("Auto-deleted weekly (7 days)", data["retention_policy"]["docx"])
+
+    def test_security_headers_present(self):
+        client = TestClient(app)
+        res = client.get("/api/health")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get("Strict-Transport-Security"), "max-age=31536000; includeSubDomains")
+        self.assertEqual(res.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(res.headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(res.headers.get("X-XSS-Protection"), "1; mode=block")
+
+    def test_admin_key_guard(self):
+        client = TestClient(app)
+        from backend.app import main
+        orig_key = main.ADMIN_SECRET_KEY
+        try:
+            main.ADMIN_SECRET_KEY = "super-secret-key-123"
+            # Without key -> 401
+            res_no_key = client.post("/api/maintenance/cleanup")
+            self.assertEqual(res_no_key.status_code, 401)
+            # With wrong key -> 401
+            res_bad_key = client.post("/api/maintenance/cleanup", headers={"X-Admin-Key": "wrong-key"})
+            self.assertEqual(res_bad_key.status_code, 401)
+            # With correct key -> 200
+            res_good_key = client.post("/api/maintenance/cleanup", headers={"X-Admin-Key": "super-secret-key-123"})
+            self.assertEqual(res_good_key.status_code, 200)
+        finally:
+            main.ADMIN_SECRET_KEY = orig_key
 
     def test_normalize_date_and_inr_formatting(self):
         self.assertEqual(_normalize_date("01-Jan-2019"), "01-01-2019")

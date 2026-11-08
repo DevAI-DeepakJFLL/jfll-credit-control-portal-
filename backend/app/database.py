@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import secrets
 import logging
 from datetime import datetime
 from contextlib import contextmanager
@@ -59,12 +60,21 @@ def init_db():
                 risk_grade TEXT,
                 docx_filename TEXT NOT NULL UNIQUE,
                 source_pdf TEXT,
+                access_token TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        cursor.execute("PRAGMA table_info(appraisals)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "access_token" not in columns:
+            try:
+                cursor.execute("ALTER TABLE appraisals ADD COLUMN access_token TEXT;")
+            except Exception:
+                pass
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_customer_name ON appraisals(customer_name);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_created_at ON appraisals(created_at DESC);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_docx_filename ON appraisals(docx_filename);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_access_token ON appraisals(access_token);')
         conn.commit()
 
         # Reconcile any individual remote records written by concurrent serverless containers
@@ -88,19 +98,22 @@ def save_appraisal(
     type_of_company: str,
     risk_grade: str,
     docx_filename: str,
-    source_pdf: Optional[str] = None
+    source_pdf: Optional[str] = None,
+    access_token: Optional[str] = None
 ) -> int:
     created_at = datetime.now().isoformat()
+    if not access_token:
+        access_token = secrets.token_urlsafe(16)
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO appraisals (
                 customer_name, crif_credit_limit, credit_days, salesperson,
-                type_of_company, risk_grade, docx_filename, source_pdf, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                type_of_company, risk_grade, docx_filename, source_pdf, access_token, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             customer_name, crif_credit_limit, credit_days, salesperson,
-            type_of_company, risk_grade, docx_filename, source_pdf, created_at
+            type_of_company, risk_grade, docx_filename, source_pdf, access_token, created_at
         ))
         conn.commit()
         last_id = cursor.lastrowid or 0
@@ -118,6 +131,7 @@ def save_appraisal(
                 "risk_grade": risk_grade,
                 "docx_filename": docx_filename,
                 "source_pdf": source_pdf,
+                "access_token": access_token,
                 "created_at": created_at
             }
             save_appraisal_record_to_s3(record_dict)
@@ -132,7 +146,7 @@ def get_all_appraisals(limit: int = 200, offset: int = 0) -> List[Dict[str, Any]
         cursor = conn.cursor()
         cursor.execute('''
             SELECT id, customer_name, crif_credit_limit, credit_days, salesperson,
-                   type_of_company, risk_grade, docx_filename, source_pdf, created_at
+                   type_of_company, risk_grade, docx_filename, source_pdf, access_token, created_at
             FROM appraisals
             ORDER BY id DESC
             LIMIT ? OFFSET ?
@@ -141,10 +155,20 @@ def get_all_appraisals(limit: int = 200, offset: int = 0) -> List[Dict[str, Any]
         return [dict(r) for r in rows]
 
 def get_appraisal_by_id(appraisal_id: int) -> Optional[Dict[str, Any]]:
+    return get_appraisal_by_token_or_id(str(appraisal_id))
+
+def get_appraisal_by_token_or_id(identifier: str) -> Optional[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM appraisals WHERE id = ?', (appraisal_id,))
+        # Look up by unguessable access_token first
+        cursor.execute('SELECT * FROM appraisals WHERE access_token = ?', (identifier,))
         row = cursor.fetchone()
         if row:
             return dict(row)
+        # Fallback to numeric id for backward compatibility
+        if str(identifier).isdigit():
+            cursor.execute('SELECT * FROM appraisals WHERE id = ?', (int(identifier),))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
         return None
