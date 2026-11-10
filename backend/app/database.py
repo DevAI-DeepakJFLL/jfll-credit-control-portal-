@@ -72,6 +72,7 @@ def init_db():
             except Exception:
                 pass
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_customer_name ON appraisals(customer_name);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_salesperson ON appraisals(salesperson);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_created_at ON appraisals(created_at DESC);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_docx_filename ON appraisals(docx_filename);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_appraisals_access_token ON appraisals(access_token);')
@@ -83,10 +84,17 @@ def init_db():
     
     _db_initialized = True
 
-def get_appraisals_count() -> int:
+def get_appraisals_count(search: Optional[str] = None) -> int:
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM appraisals')
+        if search and search.strip():
+            query_param = f"%{search.strip()}%"
+            cursor.execute(
+                'SELECT COUNT(*) FROM appraisals WHERE customer_name LIKE ? OR salesperson LIKE ?',
+                (query_param, query_param)
+            )
+        else:
+            cursor.execute('SELECT COUNT(*) FROM appraisals')
         row = cursor.fetchone()
         return row[0] if row else 0
 
@@ -141,16 +149,27 @@ def save_appraisal(
             
     return last_id
 
-def get_all_appraisals(limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
+def get_all_appraisals(limit: int = 200, offset: int = 0, search: Optional[str] = None) -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, customer_name, crif_credit_limit, credit_days, salesperson,
-                   type_of_company, risk_grade, docx_filename, source_pdf, access_token, created_at
-            FROM appraisals
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
-        ''', (limit, offset))
+        if search and search.strip():
+            query_param = f"%{search.strip()}%"
+            cursor.execute('''
+                SELECT id, customer_name, crif_credit_limit, credit_days, salesperson,
+                       type_of_company, risk_grade, docx_filename, source_pdf, access_token, created_at
+                FROM appraisals
+                WHERE customer_name LIKE ? OR salesperson LIKE ?
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+            ''', (query_param, query_param, limit, offset))
+        else:
+            cursor.execute('''
+                SELECT id, customer_name, crif_credit_limit, credit_days, salesperson,
+                       type_of_company, risk_grade, docx_filename, source_pdf, access_token, created_at
+                FROM appraisals
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+            ''', (limit, offset))
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
 

@@ -66,26 +66,32 @@ def prune_storage_files():
     pruned_docs = 0
 
     if os.path.exists(UPLOADS_DIR):
-        for fname in os.listdir(UPLOADS_DIR):
-            fpath = os.path.join(UPLOADS_DIR, fname)
-            if os.path.isfile(fpath) and fname.lower().endswith('.pdf'):
-                try:
-                    if (now - os.path.getmtime(fpath)) > PDF_RETENTION_SECONDS:
-                        os.remove(fpath)
-                        pruned_pdfs += 1
-                except OSError as e:
-                    logger.warning(f"Failed to remove expired PDF {fname}: {e}")
+        try:
+            with os.scandir(UPLOADS_DIR) as entries:
+                for entry in entries:
+                    if entry.is_file() and entry.name.lower().endswith('.pdf'):
+                        try:
+                            if (now - entry.stat().st_mtime) > PDF_RETENTION_SECONDS:
+                                os.remove(entry.path)
+                                pruned_pdfs += 1
+                        except OSError as e:
+                            logger.warning(f"Failed to remove expired PDF {entry.name}: {e}")
+        except OSError as e:
+            logger.warning(f"Failed to scan directory {UPLOADS_DIR}: {e}")
 
     if os.path.exists(MEMOS_DIR):
-        for fname in os.listdir(MEMOS_DIR):
-            fpath = os.path.join(MEMOS_DIR, fname)
-            if os.path.isfile(fpath) and fname.lower().endswith('.docx'):
-                try:
-                    if (now - os.path.getmtime(fpath)) > DOCX_RETENTION_SECONDS:
-                        os.remove(fpath)
-                        pruned_docs += 1
-                except OSError as e:
-                    logger.warning(f"Failed to remove expired DOCX memo {fname}: {e}")
+        try:
+            with os.scandir(MEMOS_DIR) as entries:
+                for entry in entries:
+                    if entry.is_file() and entry.name.lower().endswith('.docx'):
+                        try:
+                            if (now - entry.stat().st_mtime) > DOCX_RETENTION_SECONDS:
+                                os.remove(entry.path)
+                                pruned_docs += 1
+                        except OSError as e:
+                            logger.warning(f"Failed to remove expired DOCX memo {entry.name}: {e}")
+        except OSError as e:
+            logger.warning(f"Failed to scan directory {MEMOS_DIR}: {e}")
 
     if pruned_pdfs > 0 or pruned_docs > 0:
         logger.info(f"Storage retention cleanup complete: pruned {pruned_pdfs} PDFs (3h+), {pruned_docs} DOCXs (7d+)")
@@ -360,11 +366,11 @@ def load_sample_file(filename: str):
         raise HTTPException(status_code=500, detail="Failed to parse sample PDF")
 
 @app.get("/api/appraisals")
-def list_appraisals(response: Response, limit: int = 200, offset: int = 0):
+def list_appraisals(response: Response, limit: int = 200, offset: int = 0, search: Optional[str] = None):
     ensure_initialized()
-    total = get_appraisals_count()
+    total = get_appraisals_count(search=search)
     response.headers["X-Total-Count"] = str(total)
-    return get_all_appraisals(limit=min(limit, 500), offset=max(0, offset))
+    return get_all_appraisals(limit=min(limit, 500), offset=max(0, offset), search=search)
 
 @app.api_route("/logo.jpeg", methods=["GET", "HEAD"], include_in_schema=False)
 @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)

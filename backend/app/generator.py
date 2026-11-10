@@ -171,6 +171,12 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         if i == 0:
             r_val.font.size = Pt(13)
             r_val.font.color.rgb = RGBColor(30, 58, 138)
+        elif i == 1:
+            if len(values[1]) > 16:
+                r_val.font.size = Pt(8.5)
+            else:
+                r_val.font.size = Pt(10.5)
+            r_val.font.color.rgb = RGBColor(15, 23, 42)
         elif i == 2:
             r_val.font.size = Pt(11)
             r_val.font.color.rgb = RGBColor(217, 119, 6)

@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import unittest
 import tempfile
 import json
@@ -240,6 +241,105 @@ class TestCreditControlPipeline(unittest.TestCase):
         self.assertIsInstance(appraisal_id, int)
         all_records = get_all_appraisals()
         self.assertTrue(any(r['customer_name'] == 'UNIT TEST CORP' for r in all_records))
+
+    def test_api_appraisals_server_side_search(self):
+        client = TestClient(app)
+
+        # Seed records for server-side search testing
+        uid = f"SEARCH_TEST_{int(time.time() * 1000)}"
+        save_appraisal(
+            customer_name=f"ALPHA LOGISTICS {uid}",
+            crif_credit_limit="₹ 5,00,000",
+            credit_days="30 Days",
+            salesperson="Vikram Malhotra",
+            type_of_company="Private Limited",
+            risk_grade="Rx3",
+            docx_filename=f"alpha_{uid}.docx"
+        )
+        save_appraisal(
+            customer_name=f"BETA TRADERS {uid}",
+            crif_credit_limit="₹ 2,00,000",
+            credit_days="15 Days",
+            salesperson="Sunita Rao",
+            type_of_company="Proprietorship",
+            risk_grade="Rx4",
+            docx_filename=f"beta_{uid}.docx"
+        )
+        save_appraisal(
+            customer_name=f"GAMMA FREIGHT {uid}",
+            crif_credit_limit="₹ 10,00,000",
+            credit_days="45 Days",
+            salesperson="Vikram Malhotra",
+            type_of_company="Partnership",
+            risk_grade="Rx2",
+            docx_filename=f"gamma_{uid}.docx"
+        )
+
+        # 1. Search by customer name (partial, case-insensitive)
+        res_customer = client.get(f"/api/appraisals?search=alpha%20logistics%20{uid.lower()}")
+        self.assertEqual(res_customer.status_code, 200)
+        customer_items = res_customer.json()
+        self.assertEqual(len(customer_items), 1)
+        self.assertEqual(customer_items[0]["customer_name"], f"ALPHA LOGISTICS {uid}")
+        self.assertEqual(res_customer.headers.get("X-Total-Count"), "1")
+
+        # 2. Search by salesperson
+        res_rep = client.get(f"/api/appraisals?search=Sunita%20Rao")
+        self.assertEqual(res_rep.status_code, 200)
+        rep_items = res_rep.json()
+        self.assertTrue(any(item["customer_name"] == f"BETA TRADERS {uid}" for item in rep_items))
+        self.assertTrue(all("sunita" in item["salesperson"].lower() or "sunita" in item["customer_name"].lower() for item in rep_items))
+
+        # 3. Search matching multiple records (salesperson Vikram Malhotra)
+        res_multi = client.get(f"/api/appraisals?search=Vikram%20Malhotra")
+        self.assertEqual(res_multi.status_code, 200)
+        multi_items = res_multi.json()
+        matched_customers = [item["customer_name"] for item in multi_items]
+        self.assertIn(f"ALPHA LOGISTICS {uid}", matched_customers)
+        self.assertIn(f"GAMMA FREIGHT {uid}", matched_customers)
+        self.assertNotIn(f"BETA TRADERS {uid}", matched_customers)
+
+        # 4. Search with no matches
+        res_none = client.get("/api/appraisals?search=NONEXISTENT_CUSTOMER_XYZ_99999")
+        self.assertEqual(res_none.status_code, 200)
+        self.assertEqual(res_none.json(), [])
+        self.assertEqual(res_none.headers.get("X-Total-Count"), "0")
+
+    def test_generator_long_credit_days_scaled_font(self):
+        # When len(credit_days) > 16, generator should scale font size to 8.5pt
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
+            tmp_path = tmp.name
+
+        sample_data = {
+            'customer_name': 'LONG TENOR CLIENT',
+            'nature_of_business': 'Freight Forwarding',
+            'type_of_company': 'PRIVATE LIMITED',
+            'date_of_incorporation': '01-01-2020',
+            'crif_credit_limit': '₹ 10,00,000',
+            'credit_days': '30 Days IATA / 45 Days Ocean',  # Length is 28 > 16
+            'salesperson': 'Sales Executive',
+            'registered_address': 'Cargo Hub',
+            'risk_grade_score': 'Rx3 (70)',
+            'risk_description': 'Low Risk',
+            'kyc_documents': [],
+            'created_by': 'Analyst',
+            'checked_by': 'Manager',
+            'approved_by': 'Director',
+            'date': '10/11/2026'
+        }
+
+        try:
+            output_path = build_crif_docx(sample_data, tmp_path)
+            self.assertTrue(os.path.exists(output_path))
+            doc = docx.Document(output_path)
+            # Metric table is table index 1 (or 0 is header table)
+            metric_table = doc.tables[1]
+            credit_days_cell = metric_table.cell(1, 1)
+            first_run = credit_days_cell.paragraphs[0].runs[0]
+            self.assertEqual(first_run.font.size.pt, 8.5)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     def test_api_health(self):
         client = TestClient(app)

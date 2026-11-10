@@ -3,12 +3,20 @@ import pypdf
 from datetime import date
 from typing import Dict, Any, List
 
+# Precompiled regular expressions for high-frequency extraction routines
+RE_WHITESPACE = re.compile(r'[ \t]+')
+RE_INR = re.compile(r'(\d)(?=(\d{2})+$)')
+RE_EPFO = re.compile(r'\d{10,15}\s+(\d{1,2}-[A-Za-z]{3}-\d{2,4})\s+[\d\.]+\s+([A-Za-z]{3}-\d{2,4})')
+RE_COURT_VS = re.compile(r'vs\s*\.\s*([A-Z0-9\s,\.\(\)&-]+?)\s+(?:Pending|Active)', re.IGNORECASE)
+RE_COURT_PENDING = re.compile(r'\b(?:Pending|Active)\b', re.IGNORECASE)
+RE_COURT_LEGAL_HISTORY = re.compile(r'LEGAL HISTORY\s*(.*?)(?:ANNEXURE|END OF REPORT|\Z)', re.DOTALL)
+
 def clean_text(text: str) -> str:
     if not text:
         return ""
     # Normalize unicode non-breaking spaces and hyphen variants
     text = text.replace('\xa0', ' ').replace('\u2010', '-').replace('\u2013', '-').replace('\u2014', '-').replace('‐', '-')
-    text = re.sub(r'[ \t]+', ' ', text)
+    text = RE_WHITESPACE.sub(' ', text)
     return text.strip()
 
 _MONTHS = {'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
@@ -28,7 +36,7 @@ def _format_inr(amount: int) -> str:
     if len(s) <= 3:
         return f"₹ {s}"
     head, tail = s[:-3], s[-3:]
-    head = re.sub(r'(\d)(?=(\d{2})+$)', r'\1,', head)
+    head = RE_INR.sub(r'\1,', head)
     return f"₹ {head},{tail}"
 
 def _generate_kyc_checklist(type_of_company: str, gst_delay_days: int = 0, bureau: str = "Rubix") -> List[Dict[str, str]]:
@@ -55,7 +63,7 @@ def _generate_kyc_checklist(type_of_company: str, gst_delay_days: int = 0, burea
 
 def _calculate_epfo_delay(epfo_text: str) -> int:
     """Computes delay in days for the latest EPFO contribution (due 15th of next month)."""
-    m = re.search(r'\d{10,15}\s+(\d{1,2}-[A-Za-z]{3}-\d{2,4})\s+[\d\.]+\s+([A-Za-z]{3}-\d{2,4})', epfo_text)
+    m = RE_EPFO.search(epfo_text)
     if not m:
         return 0
     credit_date_str = m.group(1)
@@ -93,17 +101,17 @@ def _calculate_epfo_delay(epfo_text: str) -> int:
 
 def _extract_birl_court_cases(text: str) -> int:
     """Extracts active or pending court cases from CRIF BIRL Legal History section."""
-    m_lh = re.search(r'LEGAL HISTORY\s*(.*?)(?:ANNEXURE|END OF REPORT|\Z)', text, re.DOTALL)
+    m_lh = RE_COURT_LEGAL_HISTORY.search(text)
     if not m_lh:
         return 0
     lh_text = m_lh.group(1)
     if 'no results found' in lh_text.lower() or 'no match found' in lh_text.lower():
         return 0
-    case_matches = re.findall(r'vs\s*\.\s*([A-Z0-9\s,\.\(\)&-]+?)\s+(?:Pending|Active)', lh_text, re.IGNORECASE)
+    case_matches = RE_COURT_VS.findall(lh_text)
     if case_matches:
         unique_defendants = set(" ".join(m.split()) for m in case_matches)
         return len(unique_defendants)
-    pending_matches = re.findall(r'\b(?:Pending|Active)\b', lh_text, re.IGNORECASE)
+    pending_matches = RE_COURT_PENDING.findall(lh_text)
     return len(pending_matches)
 
 def detect_bureau_format(pdf_path: str) -> str:
@@ -112,9 +120,8 @@ def detect_bureau_format(pdf_path: str) -> str:
     Returns: 'RUBIX', 'CRIF_BIR', 'CRIF_BIRL'
     """
     reader = pypdf.PdfReader(pdf_path)
-    text = ""
-    for page in reader.pages[:min(3, len(reader.pages))]:
-        text += (page.extract_text() or "") + "\n"
+    pages_text = [page.extract_text() or "" for page in reader.pages[:min(3, len(reader.pages))]]
+    text = "\n".join(pages_text)
 
     # 1. Rubix Data Sciences
     if 'Business Check' in text and ('Rubix' in text or 'RUBIX' in text or 'rubix' in text.lower()):
