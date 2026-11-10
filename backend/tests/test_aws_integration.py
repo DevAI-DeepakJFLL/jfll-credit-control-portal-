@@ -1,5 +1,4 @@
 import unittest
-import os
 from fastapi.testclient import TestClient
 from backend.app.main import app
 import lambda_handler

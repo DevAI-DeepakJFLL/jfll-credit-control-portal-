@@ -14,7 +14,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
 
 from backend.app.models import RubixExtractedData, GenerateDocxRequest
-from backend.app.parser import parse_rubix_pdf, extract_bureau_pdf
+from backend.app.parser import extract_bureau_pdf
 from backend.app.generator import build_crif_docx
 from backend.app.database import (
     init_db,

@@ -72,6 +72,7 @@ backend/storage/memos/*
 .claude/
 .cursor/
 .windsurf/
+.superpowers/
 .system_generated/
 brain/
 scratch/
