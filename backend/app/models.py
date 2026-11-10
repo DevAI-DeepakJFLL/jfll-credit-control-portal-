@@ -30,6 +30,7 @@ class RubixExtractedData(BaseModel):
     active_gst_count: int = 1
     court_cases_count: int = 0
     external_rating: str = "Not Found"
+    bureau_source: Optional[str] = "Rubix Data Sciences"
     
     # Defaults for form
     salesperson: str = ""
@@ -59,6 +60,7 @@ class GenerateDocxRequest(BaseModel):
     other_address: str = "N/A"
     risk_grade_score: str
     risk_description: str
+    bureau_source: Optional[str] = "Rubix Data Sciences"
     
     kyc_documents: List[KYCItem]
     
@@ -71,6 +73,8 @@ class GenerateDocxRequest(BaseModel):
     sec_138_cheque: bool = True
     caf_signed: bool = True
     source_pdf: Optional[str] = None
+
+BureauExtractedData = RubixExtractedData
 
 class AppraisalRecord(BaseModel):
     id: int

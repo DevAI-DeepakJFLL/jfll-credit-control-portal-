@@ -1,18 +1,22 @@
 import React, { useState, useRef } from 'react';
-import { Upload, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, AlertCircle, Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { RubixExtractedData } from '../types';
 
 interface FileUploadProps {
   onFileExtracted: (file: File) => void;
+  onSampleLoaded?: (data: RubixExtractedData) => void;
   isLoading: boolean;
   error: string | null;
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({
   onFileExtracted,
+  onSampleLoaded,
   isLoading,
   error
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
+  const [loadingSample, setLoadingSample] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -32,8 +36,25 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     }
   };
 
+  const loadSample = async (filename: string) => {
+    if (!onSampleLoaded) return;
+    setLoadingSample(filename);
+    try {
+      const res = await fetch(`/api/sample/${encodeURIComponent(filename)}`);
+      if (!res.ok) {
+        throw new Error('Failed to load sample from server');
+      }
+      const data: RubixExtractedData = await res.json();
+      onSampleLoaded(data);
+    } catch (err: any) {
+      alert(err.message || 'Error loading sample');
+    } finally {
+      setLoadingSample(null);
+    }
+  };
+
   return (
-    <div className="max-w-3xl mx-auto my-10 px-4">
+    <div className="max-w-4xl mx-auto my-10 px-4">
       <div className="text-center mb-8 flex flex-col items-center">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold mb-3.5 shadow-2xs">
           <img src="/jfll-logo.jpeg" alt="Jet Freight" className="w-4 h-4 rounded-full object-contain" />
@@ -43,7 +64,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           Customer Credit Assessment & Sanction Engine
         </h2>
         <p className="text-sm text-slate-500 mt-2 max-w-xl mx-auto leading-relaxed">
-          Upload any official Rubix Business Check report. The engine automatically extracts company financial health, statutory compliance, and recommended limits to prepare an executive Credit Approval Memorandum.
+          Upload any official Rubix Business Check or CRIF High Mark (BIR / BIRL) report. The engine automatically extracts company profile, statutory filings, and risk limits to prepare an executive Credit Approval Memorandum.
         </p>
       </div>
 
@@ -79,10 +100,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               <Upload className="w-7 h-7" />
             </div>
             <h3 className="font-bold text-slate-900 text-base">
-              Drop your Rubix PDF here, or <span className="text-blue-600 underline font-semibold">browse files</span>
+              Drop your Rubix or CRIF (BIR / BIRL) PDF here, or <span className="text-blue-600 underline font-semibold">browse files</span>
             </h3>
             <p className="text-xs text-slate-400 mt-2">
-              Supports verified Rubix Business Check PDFs up to 25MB
+              Supports official Rubix Business Check & CRIF High Mark BIR/BIRL reports up to 25MB
             </p>
           </div>
         )}
@@ -94,6 +115,55 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           </div>
         )}
       </div>
+
+      {/* Quick Load Test Samples */}
+      {onSampleLoaded && (
+        <div className="mt-8 bg-slate-100/80 rounded-2xl p-5 border border-slate-200/80">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2 text-xs font-bold text-slate-700">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span>Instant Test Bureau Samples (Rubix & CRIF):</span>
+            </div>
+            <span className="text-[11px] text-slate-400 font-medium">Click to test instant extraction</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { name: "LADE EXPORTS", file: "LADE EXPORTS (2).pdf", bureau: "Rubix", subtitle: "Proprietorship", limit: "₹3.57L / 21D" },
+              { name: "PRIMEX INDUSTRIES", file: "PRIMEX INDUSTRIES_BIR_15-Oct-2026.pdf", bureau: "CRIF BIR", subtitle: "Partnership (Score 56)", limit: "Manual Limit" },
+              { name: "Y & H CARGO", file: "Y & H CARGO PRIVATE LIMITED-BIRL-06-Nov-2026.pdf", bureau: "CRIF BIRL", subtitle: "Pvt Ltd (Rating 4/5)", limit: "₹35.00L Limit" },
+              { name: "SEPIO PRODUCTS", file: "SEPIO PRODUCTS PRIVATE LIMITED-1.pdf", bureau: "Rubix", subtitle: "Pvt Ltd (114D PF Alert)", limit: "₹14.16L / 24D" }
+            ].map((sample, idx) => (
+              <button
+                key={idx}
+                disabled={loadingSample === sample.file || isLoading}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  loadSample(sample.file);
+                }}
+                className="text-left p-3.5 rounded-xl bg-white border border-slate-200 hover:border-blue-500 hover:shadow-xs transition group relative overflow-hidden cursor-pointer"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-xs text-slate-900 group-hover:text-blue-600 transition truncate">
+                    {sample.name}
+                  </span>
+                  {loadingSample === sample.file ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                  ) : (
+                    <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
+                  )}
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[10px] text-slate-500 truncate max-w-[110px]">{sample.subtitle}</span>
+                  <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200/60">
+                    {sample.bureau}
+                  </span>
+                </div>
+                <div className="text-[11px] font-semibold text-blue-800 mt-1 tabular-nums">{sample.limit}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

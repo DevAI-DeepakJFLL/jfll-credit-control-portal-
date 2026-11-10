@@ -25,6 +25,7 @@ export interface RubixExtractedData {
   pf_delay_days: number;
   court_cases_count: number;
   external_rating: string;
+  bureau_source?: string;
   
   salesperson: string;
   branch: string;

@@ -7,7 +7,15 @@ import docx
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from backend.app.parser import parse_rubix_pdf, _normalize_date, _format_inr
+from backend.app.parser import (
+    parse_rubix_pdf,
+    parse_crif_bir_pdf,
+    parse_crif_birl_pdf,
+    detect_bureau_format,
+    extract_bureau_pdf,
+    _normalize_date,
+    _format_inr
+)
 from backend.app.generator import build_crif_docx
 from backend.app.database import init_db, save_appraisal, get_all_appraisals
 from backend.app.main import app, prune_storage_files, UPLOADS_DIR, MEMOS_DIR
@@ -21,6 +29,10 @@ class TestCreditControlPipeline(unittest.TestCase):
         cls.rubix_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'fixtures', 'rubix_samples'
+        )
+        cls.crif_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'fixtures', 'crif_samples'
         )
 
     def test_lade_exports_extraction(self):
@@ -50,6 +62,64 @@ class TestCreditControlPipeline(unittest.TestCase):
         self.assertEqual(data['crif_credit_limit'], '₹ 14,16,000')
         self.assertEqual(data['recommended_credit_days'], 24)
         self.assertEqual(data['pf_delay_days'], 114) # Caught statutory delay
+
+    def test_primex_industries_bir_extraction(self):
+        pdf_path = os.path.join(self.crif_dir, 'PRIMEX INDUSTRIES_BIR_15-Oct-2026.pdf')
+        data = parse_crif_bir_pdf(pdf_path)
+        self.assertEqual(data['customer_name'], 'PRIMEX INDUSTRIES')
+        self.assertEqual(data['type_of_company'], 'Partnership')
+        self.assertEqual(data['date_of_incorporation'], '2016')
+        self.assertEqual(data['registered_address'], '5Th Floor, 503, Neo Corporate Plaza, Ramchandra Lane, Malad West, Mumbai, Mumbai Suburban, Maharashtra, 400064')
+        self.assertEqual(data['nature_of_business'], 'Primex Industries is a partnership firm, engaged as trader: wholesaler/distributor for plastics polymers products')
+        self.assertEqual(data['bureau_source'], 'CRIF Solutions (BIR)')
+        self.assertEqual(data['risk_score'], 56)
+        self.assertEqual(data['risk_grade'], 'Normal')
+        self.assertEqual(data['risk_description'], 'Score: 56/99 (Normal Index)')
+        self.assertEqual(data['crif_credit_limit'], '₹ 0.00')
+        self.assertEqual(data['recommended_credit_days'], 30)
+        self.assertEqual(data['gst_delay_days'], 0)
+        self.assertEqual(data['pf_delay_days'], 0)
+        self.assertEqual(data['court_cases_count'], 0)
+        self.assertTrue(any(d['document'] == 'Certificate of Incorporation / Deed' for d in data['kyc_documents']))
+
+    def test_yh_cargo_birl_extraction(self):
+        pdf_path = os.path.join(self.crif_dir, 'Y & H CARGO PRIVATE LIMITED-BIRL-06-Nov-2026.pdf')
+        data = parse_crif_birl_pdf(pdf_path)
+        self.assertEqual(data['customer_name'], 'Y & H CARGO PRIVATE LIMITED')
+        self.assertEqual(data['type_of_company'], 'PRIVATE LIMITED')
+        self.assertEqual(data['date_of_incorporation'], '18-01-2011')
+        self.assertEqual(data['registered_address'], '1/2, Block-1, 3Rd Floor, Landmark, Whs, Kirti Nagar Industrial Area, New Delhi - 110015, Delhi, India')
+        self.assertTrue('international logistics service provider' in data['nature_of_business'])
+        self.assertEqual(data['bureau_source'], 'CRIF Solutions (BIRL)')
+        self.assertEqual(data['risk_score'], 80)
+        self.assertEqual(data['risk_grade'], 'Rating 4/5')
+        self.assertEqual(data['risk_description'], 'Rating 4/5, Low Risk (Business trend: activity increase)')
+        self.assertEqual(data['crif_credit_limit'], '₹ 35,00,000')
+        self.assertEqual(data['recommended_credit_days'], 30)
+        self.assertEqual(data['court_cases_count'], 2)
+        self.assertEqual(data['pf_delay_days'], 0)
+        self.assertTrue(any(d['document'] == 'Certificate of Incorporation (COI)' for d in data['kyc_documents']))
+
+    def test_detect_bureau_format_and_extract_dispatch(self):
+        rubix_pdf = os.path.join(self.rubix_dir, 'LADE EXPORTS (2).pdf')
+        bir_pdf = os.path.join(self.crif_dir, 'PRIMEX INDUSTRIES_BIR_15-Oct-2026.pdf')
+        birl_pdf = os.path.join(self.crif_dir, 'Y & H CARGO PRIVATE LIMITED-BIRL-06-Nov-2026.pdf')
+
+        self.assertEqual(detect_bureau_format(rubix_pdf), 'RUBIX')
+        self.assertEqual(detect_bureau_format(bir_pdf), 'CRIF_BIR')
+        self.assertEqual(detect_bureau_format(birl_pdf), 'CRIF_BIRL')
+
+        data_rubix = extract_bureau_pdf(rubix_pdf)
+        self.assertEqual(data_rubix['customer_name'], 'LADE EXPORTS')
+        self.assertEqual(data_rubix['bureau_source'], 'Rubix Data Sciences')
+
+        data_bir = extract_bureau_pdf(bir_pdf)
+        self.assertEqual(data_bir['customer_name'], 'PRIMEX INDUSTRIES')
+        self.assertEqual(data_bir['bureau_source'], 'CRIF Solutions (BIR)')
+
+        data_birl = extract_bureau_pdf(birl_pdf)
+        self.assertEqual(data_birl['customer_name'], 'Y & H CARGO PRIVATE LIMITED')
+        self.assertEqual(data_birl['bureau_source'], 'CRIF Solutions (BIRL)')
 
     def test_docx_generation(self):
         with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:

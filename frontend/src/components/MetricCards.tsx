@@ -32,7 +32,13 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ data, onChange }) => {
         </div>
         <div className="text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between">
           <span className="text-slate-400">Bureau Suggested:</span>
-          <span className="font-semibold text-slate-700">₹ {data.rubix_credit_limit_lakhs} Lakhs</span>
+          <span className="font-semibold text-slate-700">
+            {data.rubix_credit_limit_lakhs > 0
+              ? `₹ ${data.rubix_credit_limit_lakhs} Lakhs`
+              : data.crif_credit_limit !== '₹ 0.00'
+              ? data.crif_credit_limit
+              : 'Manual Underwriting'}
+          </span>
         </div>
       </div>
 
@@ -61,10 +67,12 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ data, onChange }) => {
         </div>
       </div>
 
-      {/* 3. Bureau Risk Rating (Rubix) */}
+      {/* 3. Bureau Risk Rating */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs relative overflow-hidden">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase">Bureau Risk Rating</span>
+          <span className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+            {data.bureau_source?.includes('CRIF') ? 'CRIF Rating' : 'Rubix Risk Grade'}
+          </span>
           <span className="p-1.5 rounded-lg bg-amber-50 text-amber-600">
             <AlertTriangle className="w-4 h-4" />
           </span>

@@ -107,10 +107,11 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     r_date_val = p_meta.add_run(data.get('date', 'N/A') + "\n")
     r_date_val.font.size = Pt(9)
     
+    bureau_source = data.get('bureau_source') or "Rubix Data Sciences"
     r_ref_lbl = p_meta.add_run("Source: ")
     r_ref_lbl.font.bold = True
     r_ref_lbl.font.size = Pt(8.5)
-    r_ref_val = p_meta.add_run("Rubix Data Sciences\n")
+    r_ref_val = p_meta.add_run(f"{bureau_source}\n")
     r_ref_val.font.size = Pt(8.5)
     
     r_status = p_meta.add_run("STATUS: APPROVED")
@@ -125,7 +126,8 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     metric_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     metric_table.autofit = False
     m_widths = [Inches(1.85), Inches(1.65), Inches(1.85), Inches(1.65)]
-    labels = ["CRIF CREDIT LIMIT", "APPROVED CREDIT DAYS", "RUBIX RISK GRADE", "SALESPERSON"]
+    bureau_risk_header = "CRIF EVALUATION" if "CRIF" in bureau_source.upper() else "RUBIX RISK GRADE"
+    labels = ["CRIF CREDIT LIMIT", "APPROVED CREDIT DAYS", bureau_risk_header, "SALESPERSON"]
     values = [
         data.get('crif_credit_limit', '₹ 0.00'),
         data.get('credit_days', '30 Days'),

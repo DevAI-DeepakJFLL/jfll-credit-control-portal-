@@ -12,7 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
 
 from backend.app.models import RubixExtractedData, GenerateDocxRequest
-from backend.app.parser import parse_rubix_pdf
+from backend.app.parser import parse_rubix_pdf, extract_bureau_pdf
 from backend.app.generator import build_crif_docx
 from backend.app.database import (
     init_db,
@@ -186,13 +186,13 @@ async def extract_pdf(file: UploadFile = File(...)):
                 buffer.write(chunk)
             
         try:
-            extracted = parse_rubix_pdf(upload_path)
+            extracted = extract_bureau_pdf(upload_path)
             extracted['appraisal_date'] = datetime.now().strftime("%d/%m/%Y")
             extracted['salesperson'] = extracted.get('salesperson') or "Snehal Birje"
             return extracted
         except Exception as e:
             logger.error(f"Error parsing PDF {upload_path}: {str(e)}")
-            raise HTTPException(status_code=500, detail="Failed to parse Rubix PDF. Ensure file is not corrupted or password-protected.")
+            raise HTTPException(status_code=500, detail="Failed to parse bureau PDF. Ensure file is not corrupted or password-protected.")
     finally:
         await file.close()
         # Cleanup temporary uploaded PDF to prevent unbounded disk growth
@@ -287,6 +287,29 @@ def trigger_maintenance_cleanup(x_admin_key: Optional[str] = Header(None)):
         "pruned": stats,
         "timestamp": datetime.now().isoformat()
     }
+
+@app.get("/api/sample/{filename}")
+def load_sample_file(filename: str):
+    ensure_initialized()
+    clean_name = os.path.basename(filename)
+    rubix_dir = os.path.join(BACKEND_DIR, 'tests', 'fixtures', 'rubix_samples')
+    crif_dir = os.path.join(BACKEND_DIR, 'tests', 'fixtures', 'crif_samples')
+    
+    file_path = os.path.join(rubix_dir, clean_name)
+    if not os.path.exists(file_path):
+        file_path = os.path.join(crif_dir, clean_name)
+        
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Sample fixture not found")
+        
+    try:
+        extracted = extract_bureau_pdf(file_path)
+        extracted['appraisal_date'] = datetime.now().strftime("%d/%m/%Y")
+        extracted['salesperson'] = extracted.get('salesperson') or "Snehal Birje"
+        return extracted
+    except Exception as e:
+        logger.error(f"Error extracting sample {filename}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse sample PDF")
 
 @app.get("/api/appraisals")
 def list_appraisals(response: Response, limit: int = 200, offset: int = 0):

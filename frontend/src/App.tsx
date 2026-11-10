@@ -58,6 +58,7 @@ export const App: React.FC = () => {
         other_address: extractedData.other_address || 'N/A',
         risk_grade_score: `${extractedData.risk_grade} (${extractedData.risk_score})`,
         risk_description: extractedData.risk_description,
+        bureau_source: extractedData.bureau_source || 'Rubix Data Sciences',
         kyc_documents: extractedData.kyc_documents,
         created_by: extractedData.created_by,
         checked_by: extractedData.checked_by,
@@ -128,6 +129,7 @@ export const App: React.FC = () => {
         ) : !extractedData ? (
           <FileUpload
             onFileExtracted={handleFileExtracted}
+            onSampleLoaded={(data) => setExtractedData(data)}
             isLoading={isLoading}
             error={error}
           />
