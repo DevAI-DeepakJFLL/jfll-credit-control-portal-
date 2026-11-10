@@ -16,6 +16,7 @@ from backend.app.parser import (
     _normalize_date,
     _format_inr
 )
+from backend.app.models import RubixExtractedData, GenerateDocxRequest
 from backend.app.generator import build_crif_docx
 from backend.app.database import init_db, save_appraisal, get_all_appraisals
 from backend.app.main import app, prune_storage_files, UPLOADS_DIR, MEMOS_DIR
@@ -155,6 +156,74 @@ class TestCreditControlPipeline(unittest.TestCase):
         doc = docx.Document(output_path)
         self.assertGreater(len(doc.tables), 3)
         os.remove(tmp_path)
+
+    def test_enhanced_fields_docx_generation(self):
+        # 1. Verify GenerateDocxRequest and RubixExtractedData validation
+        rubix_data = RubixExtractedData(
+            customer_name="TEST EXTRACTED CORP",
+            nature_of_business="Freight Forwarding",
+            type_of_company="Private Limited",
+            date_of_incorporation="01-01-2015",
+            registered_address="Mumbai Cargo Terminal",
+            additional_info="High priority client with seasonal volume spikes.",
+            commercial_mode="Air",
+            mail_approval="director@jetfreight.com",
+            iata_credit_days="21 Days",
+            ocean_credit_days="30 Days"
+        )
+        self.assertEqual(rubix_data.additional_info, "High priority client with seasonal volume spikes.")
+        self.assertEqual(rubix_data.commercial_mode, "Air")
+        self.assertEqual(rubix_data.mail_approval, "director@jetfreight.com")
+        self.assertEqual(rubix_data.iata_credit_days, "21 Days")
+        self.assertEqual(rubix_data.ocean_credit_days, "30 Days")
+
+        req = GenerateDocxRequest(
+            customer_name="TEST ENHANCED CORP",
+            nature_of_business="Logistics & Cold Chain",
+            type_of_company="Private Limited",
+            date_of_incorporation="12-05-2016",
+            crif_credit_limit="₹ 25,00,000",
+            credit_days="30 Days",
+            salesperson="Jane Doe",
+            registered_address="Plot 45, Andheri East, Mumbai 400069",
+            other_address="N/A",
+            risk_grade_score="Rx3 (72)",
+            risk_description="Low Risk",
+            kyc_documents=[{"document": "PAN", "status": "Available", "source": "ITD", "remarks": "Active"}],
+            created_by="Analyst A",
+            checked_by="Manager B",
+            approved_by="Director C",
+            date="10/11/2026",
+            additional_info="Special seasonal credit extension approved for Q4.",
+            commercial_mode="Air",
+            mail_approval="mgmt@jetfreight.com",
+            iata_credit_days="21 Days",
+            ocean_credit_days="30 Days"
+        )
+        self.assertEqual(req.additional_info, "Special seasonal credit extension approved for Q4.")
+        self.assertEqual(req.commercial_mode, "Air")
+        self.assertEqual(req.mail_approval, "mgmt@jetfreight.com")
+        self.assertEqual(req.iata_credit_days, "21 Days")
+        self.assertEqual(req.ocean_credit_days, "30 Days")
+
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+            output_path = build_crif_docx(payload, tmp_path)
+            self.assertTrue(os.path.exists(output_path))
+
+            doc = docx.Document(output_path)
+            table_texts = [cell.text for table in doc.tables for row in table.rows for cell in row.cells]
+            combined_text = " ".join(table_texts)
+
+            self.assertIn("Additional Information", combined_text)
+            self.assertIn("Special seasonal credit extension approved for Q4.", combined_text)
+            self.assertIn("[ Approved via Email: mgmt@jetfreight.com ]", combined_text)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     def test_database_audit_record(self):
         appraisal_id = save_appraisal(

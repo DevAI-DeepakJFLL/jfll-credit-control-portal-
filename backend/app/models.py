@@ -38,6 +38,9 @@ class RubixExtractedData(BaseModel):
     iata_credit_days: str = "21 Days"
     ocean_credit_days: str = "30 Days"
     customs_duty_terms: str = "0 Days (Advance COD)"
+    commercial_mode: str = "Both"
+    additional_info: str = ""
+    mail_approval: str = ""
     
     sec_138_cheque: bool = True
     caf_signed: bool = True
@@ -73,6 +76,11 @@ class GenerateDocxRequest(BaseModel):
     sec_138_cheque: bool = True
     caf_signed: bool = True
     source_pdf: Optional[str] = None
+    iata_credit_days: str = "21 Days"
+    ocean_credit_days: str = "30 Days"
+    commercial_mode: str = "Both"
+    additional_info: str = ""
+    mail_approval: str = ""
 
 BureauExtractedData = RubixExtractedData
 

@@ -200,16 +200,19 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
 
     # 3. Customer Profile
     add_section_header("1. CUSTOMER IDENTITY & BUSINESS PROFILE")
-    profile_table = doc.add_table(rows=4, cols=2)
-    profile_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    profile_table.autofit = False
-    p_widths = [Inches(2.0), Inches(5.0)]
     profile_rows = [
         ("Customer Legal Name", data.get('customer_name', 'N/A')),
         ("Type of Company", data.get('type_of_company', 'N/A')),
         ("Date of Incorporation", data.get('date_of_incorporation', 'N/A')),
         ("Registered / Business Address", data.get('registered_address', 'N/A'))
     ]
+    if data.get('additional_info'):
+        profile_rows.append(("Additional Information", data['additional_info']))
+
+    profile_table = doc.add_table(rows=len(profile_rows), cols=2)
+    profile_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    profile_table.autofit = False
+    p_widths = [Inches(2.0), Inches(5.0)]
     
     for row_idx, (lbl, val) in enumerate(profile_rows):
         c_lbl = profile_table.cell(row_idx, 0)
@@ -351,10 +354,16 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(8)
         p.paragraph_format.space_after = Pt(0)
-        r = p.add_run("[ Authorized Signature ]")
-        r.font.size = Pt(7.0)
-        r.font.italic = True
-        r.font.color.rgb = RGBColor(203, 213, 225)
+        if col_idx == 2 and data.get('mail_approval'):
+            r = p.add_run(f"[ Approved via Email: {data['mail_approval']} ]")
+            r.font.size = Pt(7.0)
+            r.font.italic = True
+            r.font.color.rgb = RGBColor(71, 85, 105)
+        else:
+            r = p.add_run("[ Authorized Signature ]")
+            r.font.size = Pt(7.0)
+            r.font.italic = True
+            r.font.color.rgb = RGBColor(203, 213, 225)
         
     for col_idx in range(3):
         c = sign_table.cell(2, col_idx)
