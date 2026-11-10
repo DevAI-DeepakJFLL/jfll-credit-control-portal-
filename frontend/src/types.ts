@@ -56,5 +56,6 @@ export interface AppraisalRecord {
   type_of_company: string;
   risk_grade: string;
   docx_filename: string;
+  access_token?: string;
   created_at: string;
 }

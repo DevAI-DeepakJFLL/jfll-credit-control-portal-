@@ -39,6 +39,33 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
   const isAirDisabled = currentMode === 'Ocean';
   const isOceanDisabled = currentMode === 'Air';
 
+  const computeCompositeTenor = (
+    mode: 'Air' | 'Ocean' | 'Both',
+    iata?: string,
+    ocean?: string
+  ): string => {
+    const iataDays = (iata !== undefined ? iata : data.iata_credit_days) || '15 Days';
+    const oceanDays = (ocean !== undefined ? ocean : data.ocean_credit_days) || '30 Days';
+    if (mode === 'Air') return iataDays;
+    if (mode === 'Ocean') return oceanDays;
+    return `Air: ${iataDays} | Ocean: ${oceanDays}`;
+  };
+
+  const handleModeChange = (mode: 'Air' | 'Ocean' | 'Both') => {
+    const approved_credit_days = computeCompositeTenor(mode);
+    onChange({ commercial_mode: mode, approved_credit_days });
+  };
+
+  const handleIataChange = (val: string) => {
+    const approved_credit_days = computeCompositeTenor(currentMode, val, data.ocean_credit_days);
+    onChange({ iata_credit_days: val, approved_credit_days });
+  };
+
+  const handleOceanChange = (val: string) => {
+    const approved_credit_days = computeCompositeTenor(currentMode, data.iata_credit_days, val);
+    onChange({ ocean_credit_days: val, approved_credit_days });
+  };
+
   // Ensure all KYC items have a stable client-side id so editing document titles does not cause key changes and unmount inputs
   useEffect(() => {
     if (data.kyc_documents && data.kyc_documents.some((item) => !item.id)) {
@@ -214,7 +241,7 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => onChange({ commercial_mode: mode })}
+                  onClick={() => handleModeChange(mode)}
                   className={`px-3.5 py-1.5 rounded-md text-xs transition cursor-pointer flex items-center space-x-1.5 ${
                     isActive
                       ? 'bg-blue-600 text-white font-bold shadow-xs'
@@ -245,7 +272,7 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
               <select
                 disabled={isAirDisabled}
                 value={data.iata_credit_days || '15 Days'}
-                onChange={(e) => onChange({ iata_credit_days: e.target.value })}
+                onChange={(e) => handleIataChange(e.target.value)}
                 className={`w-full appearance-none pr-8 px-3 py-2 rounded-lg border text-xs transition ${
                   isAirDisabled
                     ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
@@ -280,7 +307,7 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
               <select
                 disabled={isOceanDisabled}
                 value={data.ocean_credit_days || '30 Days'}
-                onChange={(e) => onChange({ ocean_credit_days: e.target.value })}
+                onChange={(e) => handleOceanChange(e.target.value)}
                 className={`w-full appearance-none pr-8 px-3 py-2 rounded-lg border text-xs transition ${
                   isOceanDisabled
                     ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'

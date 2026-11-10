@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useDeferredValue } from 'react';
+import React, { useEffect, useState, useMemo, useDeferredValue, useCallback } from 'react';
 import { Download, Search, FileText, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AppraisalRecord } from '../types';
 import { apiUrl, parseJsonResponse } from '../config/api';
@@ -16,11 +16,15 @@ export const AppraisalHistory: React.FC = () => {
   // Non-blocking deferred search for buttery smooth typing
   const deferredSearch = useDeferredValue(search);
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async (searchQuery?: string) => {
     try {
       setLoading(true);
       setFetchError(null);
-      const res = await fetch(apiUrl('/api/appraisals'));
+      const query = (searchQuery !== undefined ? searchQuery : deferredSearch).trim();
+      const endpoint = query
+        ? `/api/appraisals?search=${encodeURIComponent(query)}`
+        : '/api/appraisals';
+      const res = await fetch(apiUrl(endpoint));
       if (!res.ok) {
         const errJson = await parseJsonResponse(res).catch(() => ({ detail: 'Failed to retrieve credit records from server' }));
         throw new Error(errJson.detail || 'Failed to retrieve credit records from server');
@@ -32,11 +36,11 @@ export const AppraisalHistory: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [deferredSearch]);
 
   useEffect(() => {
-    fetchHistory();
-  }, []);
+    fetchHistory(deferredSearch);
+  }, [deferredSearch, fetchHistory]);
 
   // O(N) optimized memoized filter: avoids re-evaluating query per record
   const filtered = useMemo(() => {
@@ -103,7 +107,7 @@ export const AppraisalHistory: React.FC = () => {
         <div className="bg-white rounded-xl border border-rose-200 p-8 text-center">
           <p className="text-xs text-rose-700 font-semibold mb-2">{fetchError}</p>
           <button
-            onClick={fetchHistory}
+            onClick={() => fetchHistory()}
             className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-bold border border-rose-200 transition cursor-pointer"
           >
             Retry Connection
@@ -158,7 +162,7 @@ export const AppraisalHistory: React.FC = () => {
                     <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">{item.created_at}</td>
                     <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       <a
-                        href={apiUrl(`/api/download/${item.id}`)}
+                        href={apiUrl(`/api/download/${item.access_token || item.id}`)}
                         download
                         aria-label={`Download Credit Memo for ${item.customer_name}`}
                         title={`Download Credit Memo (.docx) for ${item.customer_name}`}
