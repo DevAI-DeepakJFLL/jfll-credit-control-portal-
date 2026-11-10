@@ -190,7 +190,7 @@ def reconcile_records_from_s3(conn) -> int:
                             data.get("customer_name", "Unknown"),
                             data.get("crif_credit_limit", "₹ 0.00"),
                             data.get("credit_days", "30"),
-                            data.get("salesperson", "Snehal Birje"),
+                            data.get("salesperson", "Unassigned"),
                             data.get("type_of_company", "Proprietorship"),
                             data.get("risk_grade", "N/A"),
                             data.get("docx_filename", expected_docx),

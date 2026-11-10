@@ -188,7 +188,6 @@ async def extract_pdf(file: UploadFile = File(...)):
         try:
             extracted = extract_bureau_pdf(upload_path)
             extracted['appraisal_date'] = datetime.now().strftime("%d/%m/%Y")
-            extracted['salesperson'] = extracted.get('salesperson') or "Snehal Birje"
             return extracted
         except Exception as e:
             logger.error(f"Error parsing PDF {upload_path}: {str(e)}")
@@ -305,7 +304,6 @@ def load_sample_file(filename: str):
     try:
         extracted = extract_bureau_pdf(file_path)
         extracted['appraisal_date'] = datetime.now().strftime("%d/%m/%Y")
-        extracted['salesperson'] = extracted.get('salesperson') or "Snehal Birje"
         return extracted
     except Exception as e:
         logger.error(f"Error extracting sample {filename}: {e}")

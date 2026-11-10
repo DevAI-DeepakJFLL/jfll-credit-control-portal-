@@ -129,7 +129,6 @@ export const App: React.FC = () => {
         ) : !extractedData ? (
           <FileUpload
             onFileExtracted={handleFileExtracted}
-            onSampleLoaded={(data) => setExtractedData(data)}
             isLoading={isLoading}
             error={error}
           />
