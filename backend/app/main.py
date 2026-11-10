@@ -219,9 +219,10 @@ async def extract_pdf(request: Request, file: UploadFile = File(...)):
     if not header_bytes.startswith(PDF_MAGIC_BYTES):
         raise HTTPException(status_code=400, detail="Invalid PDF structure: Magic bytes '%PDF-' missing.")
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     safe_name = os.path.basename(file.filename or "upload.pdf")
-    safe_filename = f"{timestamp}_{safe_name}"
+    unique_suffix = secrets.token_hex(4)
+    safe_filename = f"{timestamp}_{unique_suffix}_{safe_name}"
     upload_path = os.path.join(UPLOADS_DIR, safe_filename)
     
     # Stream with size limit
@@ -255,9 +256,10 @@ async def generate_docx(request: Request, req: GenerateDocxRequest):
     check_rate_limit(request)
     ensure_initialized()
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        unique_suffix = secrets.token_hex(4)
         clean_name = "".join(c for c in req.customer_name if c.isalnum() or c in (' ', '_', '-')).strip() or "CUSTOMER"
-        filename = f"CRIF_MEMO_{clean_name}_{timestamp}.docx"
+        filename = f"CRIF_MEMO_{clean_name}_{timestamp}_{unique_suffix}.docx"
         output_path = os.path.join(MEMOS_DIR, filename)
         
         # Prepare dict for generator
