@@ -3,6 +3,8 @@ import time
 import secrets
 import asyncio
 import logging
+import threading
+from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -117,6 +119,40 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Jet Freight Logistics - Credit Control CRM", version="1.0.0", lifespan=lifespan)
 
+# In-Memory IP Rate Limiter
+_rate_limit_lock = threading.Lock()
+_ip_request_timestamps = defaultdict(list)
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
+
+def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
+
+def check_rate_limit(request: Request, limit: int = RATE_LIMIT_PER_MINUTE, window: int = 60):
+    ip = get_client_ip(request)
+    now = time.time()
+    with _rate_limit_lock:
+        timestamps = _ip_request_timestamps[ip]
+        cutoff = now - window
+        active_timestamps = [t for t in timestamps if t > cutoff]
+        _ip_request_timestamps[ip] = active_timestamps
+        if len(active_timestamps) >= limit:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Maximum 30 requests per minute allowed."
+            )
+        _ip_request_timestamps[ip].append(now)
+
+        # Periodic memory cleanup if many distinct client IPs accumulate
+        if len(_ip_request_timestamps) > 1000:
+            dead_ips = [k for k, v in _ip_request_timestamps.items() if not v or v[-1] <= cutoff]
+            for k in dead_ips:
+                del _ip_request_timestamps[k]
+
 # Security Headers Middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
@@ -127,13 +163,19 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; object-src 'none'; frame-ancestors 'none';"
+    )
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
     return response
 
 # CORS setup for local development and container deployments.
 # When running on AWS Lambda, CORS is handled directly by the Function URL infrastructure
 # to avoid duplicate "Access-Control-Allow-Origin: *, *" headers.
 if not is_lambda:
-    ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+    default_origins = "http://localhost:3000,http://127.0.0.1:3000"
+    ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", default_origins).split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=ALLOWED_ORIGINS,
@@ -159,7 +201,8 @@ def health():
     }
 
 @app.post("/api/extract", response_model=RubixExtractedData)
-async def extract_pdf(file: UploadFile = File(...)):
+async def extract_pdf(request: Request, file: UploadFile = File(...)):
+    check_rate_limit(request)
     ensure_initialized()
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files are supported.")
@@ -202,7 +245,8 @@ async def extract_pdf(file: UploadFile = File(...)):
                 pass
 
 @app.post("/api/generate")
-async def generate_docx(req: GenerateDocxRequest):
+async def generate_docx(request: Request, req: GenerateDocxRequest):
+    check_rate_limit(request)
     ensure_initialized()
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -274,7 +318,7 @@ ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "").strip()
 @app.post("/api/maintenance/cleanup")
 def trigger_maintenance_cleanup(x_admin_key: Optional[str] = Header(None)):
     ensure_initialized()
-    if ADMIN_SECRET_KEY and x_admin_key != ADMIN_SECRET_KEY:
+    if not ADMIN_SECRET_KEY or not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_SECRET_KEY):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing X-Admin-Key")
     stats = prune_storage_files()
     return {
@@ -287,9 +331,15 @@ def trigger_maintenance_cleanup(x_admin_key: Optional[str] = Header(None)):
         "timestamp": datetime.now().isoformat()
     }
 
+def is_sample_routes_enabled() -> bool:
+    default_val = "false" if os.getenv("ENVIRONMENT", "").strip().lower() == "production" else "true"
+    return os.getenv("ENABLE_SAMPLE_ROUTES", default_val).strip().lower() == "true"
+
 @app.get("/api/sample/{filename}")
 def load_sample_file(filename: str):
     ensure_initialized()
+    if not is_sample_routes_enabled():
+        raise HTTPException(status_code=403, detail="Sample routes are disabled in this environment.")
     clean_name = os.path.basename(filename)
     rubix_dir = os.path.join(BACKEND_DIR, 'tests', 'fixtures', 'rubix_samples')
     crif_dir = os.path.join(BACKEND_DIR, 'tests', 'fixtures', 'crif_samples')

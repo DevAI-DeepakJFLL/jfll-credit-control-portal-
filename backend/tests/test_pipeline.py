@@ -2,6 +2,8 @@ import os
 import sys
 import unittest
 import tempfile
+import json
+from unittest.mock import patch, MagicMock
 import docx
 
 # Add project root to path
@@ -18,7 +20,7 @@ from backend.app.parser import (
 )
 from backend.app.models import RubixExtractedData, GenerateDocxRequest
 from backend.app.generator import build_crif_docx
-from backend.app.database import init_db, save_appraisal, get_all_appraisals
+from backend.app.database import init_db, save_appraisal, get_all_appraisals, get_db
 from backend.app.main import app, prune_storage_files, UPLOADS_DIR, MEMOS_DIR
 from fastapi.testclient import TestClient
 
@@ -361,12 +363,18 @@ class TestCreditControlPipeline(unittest.TestCase):
 
     def test_maintenance_cleanup_endpoint(self):
         client = TestClient(app)
-        res = client.post("/api/maintenance/cleanup")
-        self.assertEqual(res.status_code, 200)
-        data = res.json()
-        self.assertEqual(data["status"], "ok")
-        self.assertIn("Auto-deleted after 3 hours", data["retention_policy"]["pdf"])
-        self.assertIn("Auto-deleted weekly (7 days)", data["retention_policy"]["docx"])
+        from backend.app import main
+        orig_key = main.ADMIN_SECRET_KEY
+        try:
+            main.ADMIN_SECRET_KEY = "test-cleanup-key"
+            res = client.post("/api/maintenance/cleanup", headers={"X-Admin-Key": "test-cleanup-key"})
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertEqual(data["status"], "ok")
+            self.assertIn("Auto-deleted after 3 hours", data["retention_policy"]["pdf"])
+            self.assertIn("Auto-deleted weekly (7 days)", data["retention_policy"]["docx"])
+        finally:
+            main.ADMIN_SECRET_KEY = orig_key
 
     def test_security_headers_present(self):
         client = TestClient(app)
@@ -376,6 +384,14 @@ class TestCreditControlPipeline(unittest.TestCase):
         self.assertEqual(res.headers.get("X-Content-Type-Options"), "nosniff")
         self.assertEqual(res.headers.get("X-Frame-Options"), "DENY")
         self.assertEqual(res.headers.get("X-XSS-Protection"), "1; mode=block")
+        self.assertEqual(
+            res.headers.get("Content-Security-Policy"),
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none';"
+        )
+        self.assertEqual(
+            res.headers.get("Permissions-Policy"),
+            "camera=(), microphone=(), geolocation=(), payment=()"
+        )
 
     def test_admin_key_guard(self):
         client = TestClient(app)
@@ -392,6 +408,13 @@ class TestCreditControlPipeline(unittest.TestCase):
             # With correct key -> 200
             res_good_key = client.post("/api/maintenance/cleanup", headers={"X-Admin-Key": "super-secret-key-123"})
             self.assertEqual(res_good_key.status_code, 200)
+
+            # When key is unset/empty, fail-closed (401)
+            main.ADMIN_SECRET_KEY = ""
+            res_unset = client.post("/api/maintenance/cleanup", headers={"X-Admin-Key": "any-key"})
+            self.assertEqual(res_unset.status_code, 401)
+            res_unset_no_header = client.post("/api/maintenance/cleanup")
+            self.assertEqual(res_unset_no_header.status_code, 401)
         finally:
             main.ADMIN_SECRET_KEY = orig_key
 
@@ -405,6 +428,121 @@ class TestCreditControlPipeline(unittest.TestCase):
         self.assertEqual(_format_inr(357000), "₹ 3,57,000")
         self.assertEqual(_format_inr(1416000), "₹ 14,16,000")
         self.assertEqual(_format_inr(12500000), "₹ 1,25,00,000")
+
+    def test_security_hardening(self):
+        client = TestClient(app)
+
+        # 1. Fail-closed admin auth for cleanup endpoint
+        from backend.app import main
+        orig_key = main.ADMIN_SECRET_KEY
+        try:
+            main.ADMIN_SECRET_KEY = ""
+            res_no_key = client.post("/api/maintenance/cleanup")
+            self.assertEqual(res_no_key.status_code, 401, "Cleanup must fail-closed if ADMIN_SECRET_KEY is unset")
+            res_with_key = client.post("/api/maintenance/cleanup", headers={"X-Admin-Key": "some-key"})
+            self.assertEqual(res_with_key.status_code, 401, "Cleanup must fail-closed if ADMIN_SECRET_KEY is unset even with header")
+
+            main.ADMIN_SECRET_KEY = "test-secret-value-123"
+            res_wrong = client.post("/api/maintenance/cleanup", headers={"X-Admin-Key": "wrong-secret"})
+            self.assertEqual(res_wrong.status_code, 401, "Cleanup must return 401 on mismatched key")
+            res_correct = client.post("/api/maintenance/cleanup", headers={"X-Admin-Key": "test-secret-value-123"})
+            self.assertEqual(res_correct.status_code, 200, "Cleanup must succeed with valid key")
+        finally:
+            main.ADMIN_SECRET_KEY = orig_key
+
+        # 2. Content-Security-Policy & Permissions-Policy headers
+        health_res = client.get("/api/health")
+        self.assertEqual(health_res.status_code, 200)
+        self.assertEqual(
+            health_res.headers.get("Content-Security-Policy"),
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none';"
+        )
+        self.assertEqual(
+            health_res.headers.get("Permissions-Policy"),
+            "camera=(), microphone=(), geolocation=(), payment=()"
+        )
+
+        # 3. S3 reconciliation restores access_token
+        from backend.app import s3_storage
+        with patch("backend.app.s3_storage.is_s3_enabled", return_value=True), \
+             patch("backend.app.s3_storage.get_s3_client") as mock_get_client:
+            mock_s3 = MagicMock()
+            mock_get_client.return_value = mock_s3
+            mock_paginator = MagicMock()
+            mock_s3.get_paginator.return_value = mock_paginator
+            mock_paginator.paginate.return_value = [
+                {"Contents": [{"Key": "records/RECON_SEC_TEST.json"}]}
+            ]
+            record_payload = {
+                "customer_name": "SECURITY TEST CORP",
+                "crif_credit_limit": "₹ 15,00,000",
+                "credit_days": "30",
+                "salesperson": "Sec Analyst",
+                "type_of_company": "Private Limited",
+                "risk_grade": "Rx2",
+                "docx_filename": "RECON_SEC_TEST.docx",
+                "source_pdf": "sec_test.pdf",
+                "access_token": "token-sec-verify-xyz987",
+                "created_at": "2026-11-10T15:00:00"
+            }
+            body_mock = MagicMock()
+            body_mock.read.return_value = json.dumps(record_payload).encode("utf-8")
+            mock_s3.get_object.return_value = {"Body": body_mock}
+
+            with get_db() as conn:
+                conn.cursor().execute("DELETE FROM appraisals WHERE docx_filename = 'RECON_SEC_TEST.docx'")
+                conn.commit()
+                reconciled_count = s3_storage.reconcile_records_from_s3(conn)
+                self.assertEqual(reconciled_count, 1)
+
+                cursor = conn.cursor()
+                cursor.execute("SELECT access_token FROM appraisals WHERE docx_filename = 'RECON_SEC_TEST.docx'")
+                row = cursor.fetchone()
+                self.assertIsNotNone(row)
+                token_val = row["access_token"] if hasattr(row, "keys") else row[0]
+                self.assertEqual(token_val, "token-sec-verify-xyz987")
+
+        # 4. Rate limiting: excess requests trigger 429
+        # 30 requests/minute per client IP
+        from backend.app.main import _ip_request_timestamps, _rate_limit_lock
+        with _rate_limit_lock:
+            _ip_request_timestamps.clear()
+
+        # Generate payload
+        gen_payload = {
+            'customer_name': 'RATE LIMIT TEST',
+            'nature_of_business': 'Testing rate limit.',
+            'type_of_company': 'Proprietorship',
+            'date_of_incorporation': '01-01-2020',
+            'crif_credit_limit': '₹ 1,00,000',
+            'credit_days': '30 Days',
+            'salesperson': 'Tester',
+            'registered_address': 'N/A',
+            'other_address': 'N/A',
+            'risk_grade_score': 'Rx5',
+            'risk_description': 'Risk',
+            'kyc_documents': [],
+            'created_by': 'A',
+            'checked_by': 'B',
+            'approved_by': 'C',
+            'date': '08/11/2026'
+        }
+        # Fire 30 requests - should succeed (200)
+        for _ in range(30):
+            r = client.post("/api/generate", json=gen_payload)
+            self.assertEqual(r.status_code, 200)
+        # 31st request should be rate limited (429)
+        r_limited = client.post("/api/generate", json=gen_payload)
+        self.assertEqual(r_limited.status_code, 429)
+
+        # Clear rate limiter state for clean environment
+        with _rate_limit_lock:
+            _ip_request_timestamps.clear()
+
+        # 5. Guard /api/sample/{filename}
+        with patch.dict(os.environ, {"ENVIRONMENT": "production"}, clear=False):
+            res_prod = client.get("/api/sample/some_sample.pdf")
+            self.assertIn(res_prod.status_code, (403, 404))
 
 if __name__ == '__main__':
     unittest.main()

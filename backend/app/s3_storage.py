@@ -184,8 +184,8 @@ def reconcile_records_from_s3(conn) -> int:
                         cursor.execute('''
                             INSERT OR IGNORE INTO appraisals (
                                 customer_name, crif_credit_limit, credit_days, salesperson,
-                                type_of_company, risk_grade, docx_filename, source_pdf, created_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                type_of_company, risk_grade, docx_filename, source_pdf, access_token, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (
                             data.get("customer_name", "Unknown"),
                             data.get("crif_credit_limit", "₹ 0.00"),
@@ -195,6 +195,7 @@ def reconcile_records_from_s3(conn) -> int:
                             data.get("risk_grade", "N/A"),
                             data.get("docx_filename", expected_docx),
                             data.get("source_pdf"),
+                            data.get("access_token"),
                             data.get("created_at")
                         ))
                         existing_filenames.add(expected_docx)
