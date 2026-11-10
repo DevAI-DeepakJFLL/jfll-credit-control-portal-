@@ -46,20 +46,34 @@ export const App: React.FC = () => {
     if (!extractedData || isGenerating) return;
     setIsGenerating(true);
     try {
+      let creditDays = `Air: ${extractedData.iata_credit_days || '15 Days'} | Ocean: ${extractedData.ocean_credit_days || '30 Days'}`;
+      if (extractedData.commercial_mode === 'Air') {
+        creditDays = extractedData.iata_credit_days || '15 Days';
+      } else if (extractedData.commercial_mode === 'Ocean') {
+        creditDays = extractedData.ocean_credit_days || '30 Days';
+      }
+
       const payload = {
         customer_name: extractedData.customer_name,
         nature_of_business: extractedData.nature_of_business,
         type_of_company: extractedData.type_of_company,
         date_of_incorporation: extractedData.date_of_incorporation,
         crif_credit_limit: extractedData.crif_credit_limit,
-        credit_days: extractedData.approved_credit_days,
+        credit_days: creditDays,
+        iata_credit_days: extractedData.iata_credit_days || '15 Days',
+        ocean_credit_days: extractedData.ocean_credit_days || '30 Days',
+        commercial_mode: extractedData.commercial_mode || 'Both',
+        additional_info: extractedData.additional_info || '',
+        mail_approval: extractedData.mail_approval || '',
         salesperson: extractedData.salesperson || 'Unassigned',
         registered_address: extractedData.registered_address,
         other_address: extractedData.other_address || 'N/A',
         risk_grade_score: `${extractedData.risk_grade} (${extractedData.risk_score})`,
         risk_description: extractedData.risk_description,
         bureau_source: extractedData.bureau_source || 'Rubix Data Sciences',
-        kyc_documents: extractedData.kyc_documents,
+        kyc_documents: (extractedData.kyc_documents || []).filter(
+          (item) => item.document && item.document.trim() !== ''
+        ),
         created_by: extractedData.created_by,
         checked_by: extractedData.checked_by,
         approved_by: extractedData.approved_by,

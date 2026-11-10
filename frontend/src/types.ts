@@ -1,4 +1,5 @@
 export interface KYCItem {
+  id?: string;
   document: string;
   status: string;
   source: string;
@@ -12,6 +13,7 @@ export interface RubixExtractedData {
   date_of_incorporation: string;
   registered_address: string;
   other_address: string;
+  additional_info?: string;
   
   rubix_credit_limit_lakhs: number;
   crif_credit_limit: string;
@@ -29,12 +31,14 @@ export interface RubixExtractedData {
   
   salesperson: string;
   branch: string;
+  commercial_mode?: 'Air' | 'Ocean' | 'Both';
   iata_credit_days: string;
   ocean_credit_days: string;
   customs_duty_terms: string;
   
   sec_138_cheque: boolean;
   caf_signed: boolean;
+  mail_approval?: string;
   
   kyc_documents: KYCItem[];
   created_by: string;
