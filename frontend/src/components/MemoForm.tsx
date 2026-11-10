@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Building2,
   FileCheck2,
@@ -39,6 +39,17 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
   const isAirDisabled = currentMode === 'Ocean';
   const isOceanDisabled = currentMode === 'Air';
 
+  // Ensure all KYC items have a stable client-side id so editing document titles does not cause key changes and unmount inputs
+  useEffect(() => {
+    if (data.kyc_documents && data.kyc_documents.some((item) => !item.id)) {
+      const withIds = data.kyc_documents.map((item, idx) => ({
+        ...item,
+        id: item.id || `kyc-${idx}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      }));
+      onChange({ kyc_documents: withIds });
+    }
+  }, [data.kyc_documents, onChange]);
+
   const updateKYC = (index: number, field: keyof KYCItem, value: string) => {
     const updated = [...(data.kyc_documents || [])];
     updated[index] = { ...updated[index], [field]: value };
@@ -57,8 +68,12 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
   };
 
   const deleteKYCItem = (index: number) => {
-    const updated = (data.kyc_documents || []).filter((_, idx) => idx !== index);
-    onChange({ kyc_documents: updated });
+    const item = data.kyc_documents?.[index];
+    const docName = item?.document?.trim() ? `"${item.document.trim()}"` : 'this document';
+    if (window.confirm(`Are you sure you want to remove ${docName} from the KYC checklist?`)) {
+      const updated = (data.kyc_documents || []).filter((_, idx) => idx !== index);
+      onChange({ kyc_documents: updated });
+    }
   };
 
   return (
@@ -342,7 +357,7 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(data.kyc_documents || []).map((item, idx) => {
-                const itemKey = item.id || `${item.document}-${idx}`;
+                const itemKey = item.id || `kyc-row-${idx}`;
                 return (
                   <tr key={itemKey} className="hover:bg-slate-50/80 transition group">
                     <td className="py-2 px-3 font-medium text-slate-900">
