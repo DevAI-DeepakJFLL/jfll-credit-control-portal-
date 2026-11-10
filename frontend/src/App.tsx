@@ -5,7 +5,7 @@ import { MetricCards } from './components/MetricCards';
 import { MemoForm } from './components/MemoForm';
 import { AppraisalHistory } from './components/AppraisalHistory';
 import { RubixExtractedData } from './types';
-import { apiUrl } from './config/api';
+import { apiUrl, parseJsonResponse } from './config/api';
 import { CheckCircle2, X, AlertCircle } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -29,11 +29,11 @@ export const App: React.FC = () => {
       });
 
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.detail || 'Failed to extract data from Rubix PDF');
+        const errJson = await parseJsonResponse(res).catch(() => ({ detail: 'Failed to extract data from PDF report' }));
+        throw new Error(errJson.detail || 'Failed to extract data from PDF report');
       }
 
-      const data: RubixExtractedData = await res.json();
+      const data: RubixExtractedData = await parseJsonResponse<RubixExtractedData>(res);
       setExtractedData(data);
     } catch (err: any) {
       setError(err.message || 'An unexpected error occurred during extraction');
@@ -75,11 +75,11 @@ export const App: React.FC = () => {
       });
 
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
+        const errJson = await parseJsonResponse(res).catch(() => ({ detail: 'Failed to generate CRIF docx' }));
         throw new Error(errJson.detail || 'Failed to generate CRIF docx');
       }
 
-      const result = await res.json();
+      const result = await parseJsonResponse(res);
 
       // Trigger automatic browser download
       const link = document.createElement('a');

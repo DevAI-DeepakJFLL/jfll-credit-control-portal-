@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Upload, AlertCircle, Loader2, Sparkles, ArrowRight } from 'lucide-react';
 import { RubixExtractedData } from '../types';
+import { apiUrl, parseJsonResponse } from '../config/api';
 
 interface FileUploadProps {
   onFileExtracted: (file: File) => void;
@@ -40,11 +41,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     if (!onSampleLoaded) return;
     setLoadingSample(filename);
     try {
-      const res = await fetch(`/api/sample/${encodeURIComponent(filename)}`);
+      const res = await fetch(apiUrl(`/api/sample/${encodeURIComponent(filename)}`));
       if (!res.ok) {
-        throw new Error('Failed to load sample from server');
+        const errJson = await parseJsonResponse(res).catch(() => ({ detail: 'Failed to load sample from server' }));
+        throw new Error(errJson.detail || 'Failed to load sample from server');
       }
-      const data: RubixExtractedData = await res.json();
+      const data: RubixExtractedData = await parseJsonResponse(res);
       onSampleLoaded(data);
     } catch (err: any) {
       alert(err.message || 'Error loading sample');

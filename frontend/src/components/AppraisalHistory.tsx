@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useDeferredValue } from 'react';
 import { Download, Search, FileText, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AppraisalRecord } from '../types';
-import { apiUrl } from '../config/api';
+import { apiUrl, parseJsonResponse } from '../config/api';
 
 export const AppraisalHistory: React.FC = () => {
   const [appraisals, setAppraisals] = useState<AppraisalRecord[]>([]);
@@ -22,9 +22,10 @@ export const AppraisalHistory: React.FC = () => {
       setFetchError(null);
       const res = await fetch(apiUrl('/api/appraisals'));
       if (!res.ok) {
-        throw new Error('Failed to retrieve credit records from server');
+        const errJson = await parseJsonResponse(res).catch(() => ({ detail: 'Failed to retrieve credit records from server' }));
+        throw new Error(errJson.detail || 'Failed to retrieve credit records from server');
       }
-      const data = await res.json();
+      const data = await parseJsonResponse<AppraisalRecord[]>(res);
       setAppraisals(data);
     } catch (err: any) {
       setFetchError(err.message || 'Unable to connect to database');
