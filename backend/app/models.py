@@ -18,6 +18,7 @@ class BaseAppraisalData(BaseModel):
     bureau_source: Optional[str] = "Rubix Data Sciences"
     
     # Standard flags and commercial terms
+    branch: str = "Mumbai Air Cargo"
     sec_138_cheque: bool = True
     caf_signed: bool = True
     iata_credit_days: str = "21 Days"

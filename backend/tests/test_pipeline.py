@@ -228,6 +228,8 @@ class TestCreditControlPipeline(unittest.TestCase):
             self.assertIn("IATA Air Freight Tenor", combined_text)
             self.assertIn("Sec. 138 NI Act Cheque", combined_text)
             self.assertIn("CAF with Cargo Lien Signed", combined_text)
+            self.assertIn("Email Approval Reference", combined_text)
+            self.assertIn("mgmt@jetfreight.com", combined_text)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

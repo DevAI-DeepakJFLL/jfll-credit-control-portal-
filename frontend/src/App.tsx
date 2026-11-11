@@ -78,6 +78,7 @@ export const App: React.FC = () => {
         checked_by: extractedData.checked_by,
         approved_by: extractedData.approved_by,
         date: extractedData.appraisal_date,
+        branch: extractedData.branch || 'Mumbai Air Cargo',
         sec_138_cheque: extractedData.sec_138_cheque,
         caf_signed: extractedData.caf_signed,
         customs_duty_terms: extractedData.customs_duty_terms || '0 Days (Immediate / COD)',
