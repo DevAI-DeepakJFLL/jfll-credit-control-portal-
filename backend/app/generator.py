@@ -143,6 +143,11 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     rPr.append(shd)
     rPr.append(bdr)
     
+    # Vertical spacing between Header and Key Metrics
+    p_gap = doc.add_paragraph()
+    p_gap.paragraph_format.space_before = Pt(0)
+    p_gap.paragraph_format.space_after = Pt(6)
+    
     # TABLE 1: Key Executive Metrics 4-Box Grid (doc.tables[1] - required by unit test contracts)
     metric_table = doc.add_table(rows=2, cols=4)
     metric_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -218,8 +223,8 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
 
     def add_section_header(title):
         p = doc.add_paragraph()
-        p.paragraph_format.space_before = Pt(3.5)
-        p.paragraph_format.space_after = Pt(1.5)
+        p.paragraph_format.space_before = Pt(8.0)
+        p.paragraph_format.space_after = Pt(3.0)
         p.paragraph_format.keep_with_next = True
         r = p.add_run(title)
         r.font.size = Pt(8.5)
