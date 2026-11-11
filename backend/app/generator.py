@@ -52,7 +52,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         
     normal_style = doc.styles['Normal']
     normal_style.font.name = 'Calibri'
-    normal_style.font.size = Pt(8.5)
+    normal_style.font.size = Pt(9.0)
     normal_style.font.color.rgb = RGBColor(15, 23, 42)
     
     # TABLE 0: Executive Corporate Letterhead
@@ -146,7 +146,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     # Vertical spacing between Header and Key Metrics
     p_gap = doc.add_paragraph()
     p_gap.paragraph_format.space_before = Pt(0)
-    p_gap.paragraph_format.space_after = Pt(6.0)
+    p_gap.paragraph_format.space_after = Pt(7.0)
     
     # TABLE 1: Key Executive Metrics 4-Box Grid (doc.tables[1] - required by unit test contracts)
     metric_table = doc.add_table(rows=2, cols=4)
@@ -189,7 +189,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(labels[i])
-        r.font.size = Pt(7.5)
+        r.font.size = Pt(8.0)
         r.font.bold = True
         r.font.color.rgb = RGBColor(71, 85, 105)
         
@@ -206,19 +206,19 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         r_val = p.add_run(values[i])
         r_val.font.bold = True
         if i == 0:
-            r_val.font.size = Pt(13.5)
+            r_val.font.size = Pt(14.0)
             r_val.font.color.rgb = RGBColor(30, 58, 138)
         elif i == 1:
             if len(values[1]) > 16:
                 r_val.font.size = Pt(8.5)
             else:
-                r_val.font.size = Pt(10.5)
+                r_val.font.size = Pt(11.0)
             r_val.font.color.rgb = RGBColor(15, 23, 42)
         elif i == 2:
-            r_val.font.size = Pt(10.5)
+            r_val.font.size = Pt(11.0)
             r_val.font.color.rgb = RGBColor(217, 119, 6)
         else:
-            r_val.font.size = Pt(10.0)
+            r_val.font.size = Pt(10.5)
             r_val.font.color.rgb = RGBColor(15, 23, 42)
             
         p_sub = c.add_paragraph()
@@ -226,13 +226,13 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p_sub.paragraph_format.space_before = Pt(0)
         p_sub.paragraph_format.space_after = Pt(0)
         r_sub = p_sub.add_run(sub_notes[i])
-        r_sub.font.size = Pt(7.0)
+        r_sub.font.size = Pt(7.5)
         r_sub.font.color.rgb = RGBColor(100, 116, 139)
 
     def add_section_header(title):
         p = doc.add_paragraph()
-        p.paragraph_format.space_before = Pt(8.0)
-        p.paragraph_format.space_after = Pt(3.0)
+        p.paragraph_format.space_before = Pt(10.5)
+        p.paragraph_format.space_after = Pt(3.5)
         p.paragraph_format.keep_with_next = True
         r = p.add_run(title)
         r.font.size = Pt(9.5)
@@ -273,7 +273,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(l1)
             r.font.bold = True
-            r.font.size = Pt(8.0)
+            r.font.size = Pt(8.5)
             r.font.color.rgb = RGBColor(71, 85, 105)
             
             c_val = row.cells[1]
@@ -286,7 +286,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(v1)
-            r.font.size = Pt(8.5)
+            r.font.size = Pt(9.0)
             if "Nature" in l1:
                 r.font.italic = True
                 r.font.color.rgb = RGBColor(51, 65, 85)
@@ -309,7 +309,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
                 p.paragraph_format.space_before = Pt(0)
                 p.paragraph_format.space_after = Pt(0)
                 r = p.add_run(str(text_val))
-                r.font.size = Pt(8.0 if is_lbl else 8.5)
+                r.font.size = Pt(8.5 if is_lbl else 9.5)
                 if is_lbl:
                     r.font.bold = True
                     r.font.color.rgb = RGBColor(71, 85, 105)
@@ -387,7 +387,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(str(text_val))
-            r.font.size = Pt(8.0 if is_lbl else 8.5)
+            r.font.size = Pt(8.5 if is_lbl else 9.5)
             if is_lbl:
                 r.font.bold = True
                 if (c_idx == 0 and "Statutory" in lbl1) or (c_idx == 2 and "Statutory" in lbl2):
@@ -434,7 +434,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(h_text)
         r.font.bold = True
-        r.font.size = Pt(7.5)
+        r.font.size = Pt(8.0)
         r.font.color.rgb = RGBColor(255, 255, 255)
         
     for row_idx, item in enumerate(kyc_items, start=1):
@@ -464,7 +464,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(text_val)
-            r.font.size = Pt(8.0)
+            r.font.size = Pt(8.5)
             if col_idx == 1:
                 r.font.bold = True
                 r.font.color.rgb = RGBColor(5, 150, 105) if "Available" in text_val else RGBColor(217, 119, 6)
@@ -495,7 +495,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     p_ml.paragraph_format.space_after = Pt(0)
     r_ml = p_ml.add_run("Email Approval Reference")
     r_ml.font.bold = True
-    r_ml.font.size = Pt(8.0)
+    r_ml.font.size = Pt(8.5)
     r_ml.font.color.rgb = RGBColor(30, 58, 138)
     
     c_mail_val = sign_table.cell(0, 1)
@@ -510,15 +510,15 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     if mail_val:
         r_tag = p_mv.add_run("✔ Verified Email Approval: ")
         r_tag.font.bold = True
-        r_tag.font.size = Pt(8.0)
+        r_tag.font.size = Pt(8.5)
         r_tag.font.color.rgb = RGBColor(22, 101, 52)
         r_mv = p_mv.add_run(mail_val)
         r_mv.font.bold = True
-        r_mv.font.size = Pt(8.5)
+        r_mv.font.size = Pt(9.5)
         r_mv.font.color.rgb = RGBColor(15, 23, 42)
     else:
         r_mv = p_mv.add_run("Physical Signature Required (No Email Approval Submitted)")
-        r_mv.font.size = Pt(7.5)
+        r_mv.font.size = Pt(8.0)
         r_mv.font.italic = True
         r_mv.font.color.rgb = RGBColor(100, 116, 139)
 
@@ -536,7 +536,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(s_title)
         r.font.bold = True
-        r.font.size = Pt(7.5)
+        r.font.size = Pt(8.0)
         r.font.color.rgb = RGBColor(71, 85, 105)
         
     # ROW 2: Compact Signature Row
@@ -544,7 +544,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         c = sign_table.cell(2, col_idx)
         c.width = s_widths[col_idx]
         set_cell_background(c, "FFFFFF")
-        set_cell_margins(c, top=30, bottom=30, left=35, right=35)
+        set_cell_margins(c, top=28, bottom=28, left=35, right=35)
         set_cell_borders(c, top=('single', '4', 'CBD5E1'), bottom=('dotted', '4', 'CBD5E1'), left=('single', '6', 'CBD5E1'), right=('single', '6', 'CBD5E1'))
         p = c.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -552,12 +552,12 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_after = Pt(0)
         if col_idx == 2 and mail_val:
             r = p.add_run(f"[ Approved via Email: {mail_val} ]")
-            r.font.size = Pt(7.5)
+            r.font.size = Pt(8.0)
             r.font.bold = True
             r.font.color.rgb = RGBColor(30, 58, 138)
         else:
             r = p.add_run("[ Authorized Signature ]")
-            r.font.size = Pt(7.0)
+            r.font.size = Pt(7.5)
             r.font.italic = True
             r.font.color.rgb = RGBColor(148, 163, 184)
         
@@ -577,11 +577,11 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r_n = p.add_run(f"Name: {s_names[col_idx]}\n")
-        r_n.font.size = Pt(7.5)
+        r_n.font.size = Pt(8.5)
         r_n.font.bold = True
         r_n.font.color.rgb = RGBColor(15, 23, 42)
         r_d = p.add_run(f"Date: {data.get('date', 'N/A')}")
-        r_d.font.size = Pt(7.0)
+        r_d.font.size = Pt(7.5)
         r_d.font.color.rgb = RGBColor(100, 116, 139)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
