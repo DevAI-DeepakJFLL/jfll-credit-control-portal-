@@ -11,7 +11,7 @@ def set_cell_background(cell, hex_color: str):
     shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{hex_color}"/>')
     cell._tc.get_or_add_tcPr().append(shd)
 
-def set_cell_margins(cell, top=20, bottom=20, left=40, right=40):
+def set_cell_margins(cell, top=20, bottom=20, left=35, right=35):
     tcMar = parse_xml(f'<w:tcMar {nsdecls("w")}><w:top w:w="{top}" w:type="dxa"/><w:bottom w:w="{bottom}" w:type="dxa"/><w:left w:w="{left}" w:type="dxa"/><w:right w:w="{right}" w:type="dxa"/></w:tcMar>')
     cell._tc.get_or_add_tcPr().append(tcMar)
 
@@ -52,7 +52,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         
     normal_style = doc.styles['Normal']
     normal_style.font.name = 'Calibri'
-    normal_style.font.size = Pt(8.0)
+    normal_style.font.size = Pt(8.5)
     normal_style.font.color.rgb = RGBColor(15, 23, 42)
     
     # TABLE 0: Executive Corporate Letterhead
@@ -84,7 +84,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     p_brand.paragraph_format.space_before = Pt(0)
     p_brand.paragraph_format.space_after = Pt(1)
     r_brand = p_brand.add_run("JET FREIGHT LOGISTICS LIMITED")
-    r_brand.font.size = Pt(11.5)
+    r_brand.font.size = Pt(13.0)
     r_brand.font.bold = True
     r_brand.font.color.rgb = RGBColor(15, 47, 100)
     
@@ -92,7 +92,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     p_title.paragraph_format.space_before = Pt(0)
     p_title.paragraph_format.space_after = Pt(1)
     r_title = p_title.add_run("CREDIT APPRAISAL MEMORANDUM (CRIF)")
-    r_title.font.size = Pt(9.0)
+    r_title.font.size = Pt(10.0)
     r_title.font.bold = True
     r_title.font.color.rgb = RGBColor(30, 58, 138)
     
@@ -100,7 +100,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     p_dept.paragraph_format.space_before = Pt(0)
     p_dept.paragraph_format.space_after = Pt(0)
     r_dept = p_dept.add_run("Credit Control & Underwriting  •  Appraisal Memo")
-    r_dept.font.size = Pt(7.0)
+    r_dept.font.size = Pt(8.0)
     r_dept.font.color.rgb = RGBColor(100, 116, 139)
     
     right_cell = header_table.cell(0, 2 if logo_path else 1)
@@ -110,10 +110,10 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     p_date.paragraph_format.space_after = Pt(1)
     r_date_lbl = p_date.add_run("Date: ")
     r_date_lbl.font.bold = True
-    r_date_lbl.font.size = Pt(7.5)
+    r_date_lbl.font.size = Pt(8.0)
     r_date_lbl.font.color.rgb = RGBColor(71, 85, 105)
     r_date_val = p_date.add_run(data.get('date', 'N/A'))
-    r_date_val.font.size = Pt(7.5)
+    r_date_val.font.size = Pt(8.0)
     r_date_val.font.color.rgb = RGBColor(15, 23, 42)
     
     p_src = right_cell.add_paragraph()
@@ -123,10 +123,10 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     bureau_source = data.get('bureau_source') or "Rubix Data Sciences"
     r_ref_lbl = p_src.add_run("Source: ")
     r_ref_lbl.font.bold = True
-    r_ref_lbl.font.size = Pt(7.5)
+    r_ref_lbl.font.size = Pt(8.0)
     r_ref_lbl.font.color.rgb = RGBColor(71, 85, 105)
     r_ref_val = p_src.add_run(bureau_source)
-    r_ref_val.font.size = Pt(7.5)
+    r_ref_val.font.size = Pt(8.0)
     r_ref_val.font.color.rgb = RGBColor(15, 23, 42)
     
     p_status = right_cell.add_paragraph()
@@ -135,7 +135,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     p_status.paragraph_format.space_after = Pt(0)
     r_status = p_status.add_run("  ✔ SANCTIONED & APPROVED  ")
     r_status.font.bold = True
-    r_status.font.size = Pt(7.0)
+    r_status.font.size = Pt(7.5)
     r_status.font.color.rgb = RGBColor(5, 150, 105)
     rPr = r_status._r.get_or_add_rPr()
     shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="ECFDF5"/>')
@@ -146,7 +146,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     # Vertical spacing between Header and Key Metrics
     p_gap = doc.add_paragraph()
     p_gap.paragraph_format.space_before = Pt(0)
-    p_gap.paragraph_format.space_after = Pt(6)
+    p_gap.paragraph_format.space_after = Pt(6.0)
     
     # TABLE 1: Key Executive Metrics 4-Box Grid (doc.tables[1] - required by unit test contracts)
     metric_table = doc.add_table(rows=2, cols=4)
@@ -163,9 +163,17 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         data.get('risk_grade_score', 'Rx5 (58)'),
         data.get('salesperson', 'N/A')
     ]
+    comm_mode = data.get('commercial_mode', 'Both')
+    if comm_mode == 'Air':
+        tenor_sub = "IATA Air Terms"
+    elif comm_mode == 'Ocean':
+        tenor_sub = "Ocean Freight Terms"
+    else:
+        tenor_sub = "Approved Payment Terms"
+
     sub_notes = [
         "Approved Credit Limit",
-        "Approved Payment Terms",
+        tenor_sub,
         data.get('risk_description', 'Risk Grade Evaluation'),
         "Sales Representative"
     ]
@@ -181,7 +189,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(labels[i])
-        r.font.size = Pt(7.0)
+        r.font.size = Pt(7.5)
         r.font.bold = True
         r.font.color.rgb = RGBColor(71, 85, 105)
         
@@ -198,19 +206,19 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         r_val = p.add_run(values[i])
         r_val.font.bold = True
         if i == 0:
-            r_val.font.size = Pt(12.0)
+            r_val.font.size = Pt(13.5)
             r_val.font.color.rgb = RGBColor(30, 58, 138)
         elif i == 1:
             if len(values[1]) > 16:
                 r_val.font.size = Pt(8.5)
             else:
-                r_val.font.size = Pt(9.5)
+                r_val.font.size = Pt(10.5)
             r_val.font.color.rgb = RGBColor(15, 23, 42)
         elif i == 2:
-            r_val.font.size = Pt(10.0)
+            r_val.font.size = Pt(10.5)
             r_val.font.color.rgb = RGBColor(217, 119, 6)
         else:
-            r_val.font.size = Pt(9.5)
+            r_val.font.size = Pt(10.0)
             r_val.font.color.rgb = RGBColor(15, 23, 42)
             
         p_sub = c.add_paragraph()
@@ -218,7 +226,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p_sub.paragraph_format.space_before = Pt(0)
         p_sub.paragraph_format.space_after = Pt(0)
         r_sub = p_sub.add_run(sub_notes[i])
-        r_sub.font.size = Pt(6.5)
+        r_sub.font.size = Pt(7.0)
         r_sub.font.color.rgb = RGBColor(100, 116, 139)
 
     def add_section_header(title):
@@ -227,15 +235,16 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_after = Pt(3.0)
         p.paragraph_format.keep_with_next = True
         r = p.add_run(title)
-        r.font.size = Pt(8.5)
+        r.font.size = Pt(9.5)
         r.font.bold = True
         r.font.color.rgb = RGBColor(15, 23, 42)
 
-    # TABLE 2: Section 1 - Customer Identity & Business Profile
+    # TABLE 2: Section 1 - Customer Identity & Business Profile (includes Operating Branch)
     add_section_header("1. CUSTOMER IDENTITY & BUSINESS PROFILE")
+    branch_val = (data.get('branch') or '').strip() or 'Mumbai Air Cargo'
     p_rows = [
         ("Customer Legal Name", data.get('customer_name', 'N/A'), "Company Type (Entity)", data.get('type_of_company', 'N/A')),
-        ("Date of Incorporation", data.get('date_of_incorporation', 'N/A'), "Operating Branch", data.get('branch', 'Mumbai Air Cargo')),
+        ("Date of Incorporation", data.get('date_of_incorporation', 'N/A'), "Operating Branch", branch_val),
         ("Registered Address", data.get('registered_address', 'N/A'), None, None),
         ("Nature of Business", data.get('nature_of_business', 'N/A'), None, None)
     ]
@@ -264,7 +273,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(l1)
             r.font.bold = True
-            r.font.size = Pt(7.5)
+            r.font.size = Pt(8.0)
             r.font.color.rgb = RGBColor(71, 85, 105)
             
             c_val = row.cells[1]
@@ -277,7 +286,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(v1)
-            r.font.size = Pt(7.5)
+            r.font.size = Pt(8.5)
             if "Nature" in l1:
                 r.font.italic = True
                 r.font.color.rgb = RGBColor(51, 65, 85)
@@ -300,7 +309,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
                 p.paragraph_format.space_before = Pt(0)
                 p.paragraph_format.space_after = Pt(0)
                 r = p.add_run(str(text_val))
-                r.font.size = Pt(7.5)
+                r.font.size = Pt(8.0 if is_lbl else 8.5)
                 if is_lbl:
                     r.font.bold = True
                     r.font.color.rgb = RGBColor(71, 85, 105)
@@ -309,21 +318,13 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
                         r.font.bold = True
                     r.font.color.rgb = RGBColor(15, 23, 42)
 
-    # TABLE 3: Section 2 - Logistics Commercial Terms & Risk Controls
+    # TABLE 3: Section 2 - Logistics Commercial Terms & Risk Controls (Mode-Aware Air/Ocean Filtering)
     add_section_header("2. LOGISTICS COMMERCIAL TERMS & RISK CONTROLS")
     sec_138_val = "Collected & Held (Enforceable)" if data.get('sec_138_cheque', True) else "Not Collected / Waived"
     caf_val = "Signed & Cargo Lien Executed" if data.get('caf_signed', True) else "Pending Signature"
-    comm_mode = data.get('commercial_mode', 'Both')
     iata_tenor = data.get('iata_credit_days', '15 Days')
     ocean_tenor = data.get('ocean_credit_days', '30 Days')
     duty_terms = data.get('customs_duty_terms', '0 Days (Immediate / COD)')
-
-    terms_rows = [
-        ("Commercial Shipment Mode", comm_mode, "Customs Duty & Handling", duty_terms),
-        ("IATA Air Freight Tenor (Credit Days)", iata_tenor if comm_mode in ('Air', 'Both') else "N/A (Ocean Only)",
-         "Ocean / Multimodal Tenor (Credit Days)", ocean_tenor if comm_mode in ('Ocean', 'Both') else "N/A (Air Only)"),
-        ("Sec. 138 NI Act Cheque (Security Cheque)", sec_138_val, "CAF with Cargo Lien Signed (Credit Agreement)", caf_val)
-    ]
 
     statutory_highlights = []
     if data.get('pf_delay_days', 0) > 0:
@@ -333,8 +334,32 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     if data.get('court_cases_count', 0) > 0:
         statutory_highlights.append(f"Litigation: {data['court_cases_count']} Cases")
 
-    if statutory_highlights:
-        terms_rows.append(("Statutory & Court Alerts", ", ".join(statutory_highlights), "Bureau Risk Evaluation", data.get('risk_grade_score', 'N/A')))
+    # Mode-Aware Row Construction: Show ONLY Air when Air, ONLY Ocean when Ocean, and BOTH when Both
+    if comm_mode == 'Air':
+        terms_rows = [
+            ("Commercial Shipment Mode", "Air Freight Only", "IATA Air Freight Tenor (Credit Days)", iata_tenor),
+            ("Customs Duty & Handling", duty_terms, "Sec. 138 NI Act Cheque (Security Cheque)", sec_138_val),
+            ("CAF with Cargo Lien Signed (Credit Agreement)", caf_val,
+             "Statutory & Court Alerts" if statutory_highlights else "Risk Safeguard Status",
+             ", ".join(statutory_highlights) if statutory_highlights else "Enforceable & Lien Executed")
+        ]
+    elif comm_mode == 'Ocean':
+        terms_rows = [
+            ("Commercial Shipment Mode", "Ocean Freight Only", "Ocean / Multimodal Tenor (Credit Days)", ocean_tenor),
+            ("Customs Duty & Handling", duty_terms, "Sec. 138 NI Act Cheque (Security Cheque)", sec_138_val),
+            ("CAF with Cargo Lien Signed (Credit Agreement)", caf_val,
+             "Statutory & Court Alerts" if statutory_highlights else "Risk Safeguard Status",
+             ", ".join(statutory_highlights) if statutory_highlights else "Enforceable & Lien Executed")
+        ]
+    else:
+        # Both Air and Ocean
+        terms_rows = [
+            ("Commercial Shipment Mode", "Both (Air & Ocean Freight)", "Customs Duty & Handling", duty_terms),
+            ("IATA Air Freight Tenor (Credit Days)", iata_tenor, "Ocean / Multimodal Tenor (Credit Days)", ocean_tenor),
+            ("Sec. 138 NI Act Cheque (Security Cheque)", sec_138_val, "CAF with Cargo Lien Signed (Credit Agreement)", caf_val)
+        ]
+        if statutory_highlights:
+            terms_rows.append(("Statutory & Court Alerts", ", ".join(statutory_highlights), "Bureau Risk Evaluation", data.get('risk_grade_score', 'N/A')))
 
     terms_table = doc.add_table(rows=len(terms_rows), cols=4)
     terms_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -344,12 +369,12 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     for r_idx, (lbl1, val1, lbl2, val2) in enumerate(terms_rows):
         row = terms_table.rows[r_idx]
         set_row_cant_split(row)
-        is_stat_alert = (r_idx == len(terms_rows) - 1 and statutory_highlights)
+        is_stat_alert = (("Statutory" in lbl1) or ("Statutory" in lbl2))
         cells = [
-            (row.cells[0], lbl1, True, "FEF2F2" if is_stat_alert else "F8FAFC", "991B1B" if is_stat_alert else "475569"),
-            (row.cells[1], val1, False, "FFFFFF", "991B1B" if is_stat_alert else "0F172A"),
-            (row.cells[2], lbl2, True, "F8FAFC", "475569"),
-            (row.cells[3], val2, False, "FFFFFF", "0F172A")
+            (row.cells[0], lbl1, True, "FEF2F2" if "Statutory" in lbl1 else "F8FAFC", "991B1B" if "Statutory" in lbl1 else "475569"),
+            (row.cells[1], val1, False, "FFFFFF", "991B1B" if "Statutory" in lbl1 else "0F172A"),
+            (row.cells[2], lbl2, True, "FEF2F2" if "Statutory" in lbl2 else "F8FAFC", "991B1B" if "Statutory" in lbl2 else "475569"),
+            (row.cells[3], val2, False, "FFFFFF", "991B1B" if "Statutory" in lbl2 else "0F172A")
         ]
         b_col = "E2E8F0"
         for c_idx, (c, text_val, is_lbl, bg_col, txt_col) in enumerate(cells):
@@ -362,10 +387,10 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(str(text_val))
-            r.font.size = Pt(7.5)
+            r.font.size = Pt(8.0 if is_lbl else 8.5)
             if is_lbl:
                 r.font.bold = True
-                if is_stat_alert and c_idx == 0:
+                if (c_idx == 0 and "Statutory" in lbl1) or (c_idx == 2 and "Statutory" in lbl2):
                     r.font.color.rgb = RGBColor(153, 27, 27)
                 else:
                     r.font.color.rgb = RGBColor(71, 85, 105)
@@ -373,7 +398,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
                 if "Enforceable" in str(text_val) or "Executed" in str(text_val):
                     r.font.bold = True
                     r.font.color.rgb = RGBColor(5, 150, 105)
-                elif is_stat_alert and c_idx == 1:
+                elif (c_idx == 1 and "Statutory" in lbl1) or (c_idx == 3 and "Statutory" in lbl2):
                     r.font.bold = True
                     r.font.color.rgb = RGBColor(153, 27, 27)
                 else:
@@ -409,17 +434,25 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(h_text)
         r.font.bold = True
-        r.font.size = Pt(7.0)
+        r.font.size = Pt(7.5)
         r.font.color.rgb = RGBColor(255, 255, 255)
         
     for row_idx, item in enumerate(kyc_items, start=1):
         bg = "FFFFFF" if row_idx % 2 != 0 else "F8FAFC"
-        row_vals = [
-            item.get('document', ''),
-            item.get('status', 'Available'),
-            item.get('source', 'Bureau Verified'),
-            item.get('remarks', 'Active')
-        ]
+        if isinstance(item, dict):
+            row_vals = [
+                item.get('document', ''),
+                item.get('status', 'Available'),
+                item.get('source', 'Bureau Verified'),
+                item.get('remarks', 'Active')
+            ]
+        else:
+            row_vals = [
+                str(item),
+                'Available',
+                'Bureau Verified',
+                'Active'
+            ]
         b_col = "E2E8F0"
         for col_idx, text_val in enumerate(row_vals):
             c = kyc_table.cell(row_idx, col_idx)
@@ -431,7 +464,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(text_val)
-            r.font.size = Pt(7.0)
+            r.font.size = Pt(8.0)
             if col_idx == 1:
                 r.font.bold = True
                 r.font.color.rgb = RGBColor(5, 150, 105) if "Available" in text_val else RGBColor(217, 119, 6)
@@ -462,7 +495,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     p_ml.paragraph_format.space_after = Pt(0)
     r_ml = p_ml.add_run("Email Approval Reference")
     r_ml.font.bold = True
-    r_ml.font.size = Pt(7.5)
+    r_ml.font.size = Pt(8.0)
     r_ml.font.color.rgb = RGBColor(30, 58, 138)
     
     c_mail_val = sign_table.cell(0, 1)
@@ -477,15 +510,15 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     if mail_val:
         r_tag = p_mv.add_run("✔ Verified Email Approval: ")
         r_tag.font.bold = True
-        r_tag.font.size = Pt(7.5)
+        r_tag.font.size = Pt(8.0)
         r_tag.font.color.rgb = RGBColor(22, 101, 52)
         r_mv = p_mv.add_run(mail_val)
         r_mv.font.bold = True
-        r_mv.font.size = Pt(7.5)
+        r_mv.font.size = Pt(8.5)
         r_mv.font.color.rgb = RGBColor(15, 23, 42)
     else:
         r_mv = p_mv.add_run("Physical Signature Required (No Email Approval Submitted)")
-        r_mv.font.size = Pt(7.0)
+        r_mv.font.size = Pt(7.5)
         r_mv.font.italic = True
         r_mv.font.color.rgb = RGBColor(100, 116, 139)
 
@@ -503,7 +536,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(s_title)
         r.font.bold = True
-        r.font.size = Pt(7.0)
+        r.font.size = Pt(7.5)
         r.font.color.rgb = RGBColor(71, 85, 105)
         
     # ROW 2: Compact Signature Row
@@ -519,12 +552,12 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_after = Pt(0)
         if col_idx == 2 and mail_val:
             r = p.add_run(f"[ Approved via Email: {mail_val} ]")
-            r.font.size = Pt(7.0)
+            r.font.size = Pt(7.5)
             r.font.bold = True
             r.font.color.rgb = RGBColor(30, 58, 138)
         else:
             r = p.add_run("[ Authorized Signature ]")
-            r.font.size = Pt(6.5)
+            r.font.size = Pt(7.0)
             r.font.italic = True
             r.font.color.rgb = RGBColor(148, 163, 184)
         
@@ -544,11 +577,11 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r_n = p.add_run(f"Name: {s_names[col_idx]}\n")
-        r_n.font.size = Pt(7.0)
+        r_n.font.size = Pt(7.5)
         r_n.font.bold = True
         r_n.font.color.rgb = RGBColor(15, 23, 42)
         r_d = p.add_run(f"Date: {data.get('date', 'N/A')}")
-        r_d.font.size = Pt(6.5)
+        r_d.font.size = Pt(7.0)
         r_d.font.color.rgb = RGBColor(100, 116, 139)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

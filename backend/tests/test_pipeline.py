@@ -197,12 +197,14 @@ class TestCreditControlPipeline(unittest.TestCase):
             checked_by="Manager B",
             approved_by="Director C",
             date="10/11/2026",
+            branch="Delhi (DEL)",
             additional_info="Special seasonal credit extension approved for Q4.",
             commercial_mode="Air",
             mail_approval="mgmt@jetfreight.com",
             iata_credit_days="21 Days",
             ocean_credit_days="30 Days"
         )
+        self.assertEqual(req.branch, "Delhi (DEL)")
         self.assertEqual(req.additional_info, "Special seasonal credit extension approved for Q4.")
         self.assertEqual(req.commercial_mode, "Air")
         self.assertEqual(req.mail_approval, "mgmt@jetfreight.com")
@@ -225,14 +227,90 @@ class TestCreditControlPipeline(unittest.TestCase):
             self.assertIn("Special seasonal credit extension approved for Q4.", combined_text)
             self.assertIn("[ Approved via Email: mgmt@jetfreight.com ]", combined_text)
             self.assertIn("Commercial Shipment Mode", combined_text)
+            self.assertIn("Air Freight Only", combined_text)
             self.assertIn("IATA Air Freight Tenor", combined_text)
+            self.assertNotIn("Ocean / Multimodal Tenor", combined_text)
             self.assertIn("Sec. 138 NI Act Cheque", combined_text)
             self.assertIn("CAF with Cargo Lien Signed", combined_text)
             self.assertIn("Email Approval Reference", combined_text)
             self.assertIn("mgmt@jetfreight.com", combined_text)
+            self.assertIn("Delhi (DEL)", combined_text)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    def test_commercial_mode_filtering(self):
+        # 1. Test Ocean mode: only Ocean tenor displayed, no IATA Air
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_ocean:
+            ocean_path = tmp_ocean.name
+        try:
+            ocean_payload = {
+                'customer_name': 'OCEAN ONLY CLIENT',
+                'nature_of_business': 'Seaport freight forwarding.',
+                'type_of_company': 'PRIVATE LIMITED',
+                'date_of_incorporation': '01-01-2020',
+                'crif_credit_limit': '₹ 15,00,000',
+                'credit_days': '45 Days',
+                'salesperson': 'Ocean Rep',
+                'branch': 'Mumbai Seaport (Nhava Sheva)',
+                'registered_address': 'Nhava Sheva Port, Navi Mumbai',
+                'commercial_mode': 'Ocean',
+                'ocean_credit_days': '45 Days',
+                'iata_credit_days': '15 Days',
+                'risk_grade_score': 'Rx3 (70)',
+                'risk_description': 'Low Risk',
+                'kyc_documents': [],
+                'created_by': 'Analyst',
+                'checked_by': 'Manager',
+                'approved_by': 'Director',
+                'date': '11/11/2026'
+            }
+            build_crif_docx(ocean_payload, ocean_path)
+            doc_ocean = docx.Document(ocean_path)
+            ocean_text = " ".join([c.text for t in doc_ocean.tables for r in t.rows for c in r.cells])
+            self.assertIn("Ocean Freight Only", ocean_text)
+            self.assertIn("Ocean / Multimodal Tenor", ocean_text)
+            self.assertNotIn("IATA Air Freight Tenor", ocean_text)
+            self.assertIn("Mumbai Seaport (Nhava Sheva)", ocean_text)
+        finally:
+            if os.path.exists(ocean_path):
+                os.remove(ocean_path)
+
+        # 2. Test Both mode: both Air and Ocean tenors displayed
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_both:
+            both_path = tmp_both.name
+        try:
+            both_payload = {
+                'customer_name': 'MULTIMODAL CLIENT',
+                'nature_of_business': 'Air and sea cargo consolidation.',
+                'type_of_company': 'PRIVATE LIMITED',
+                'date_of_incorporation': '01-01-2020',
+                'crif_credit_limit': '₹ 25,00,000',
+                'credit_days': 'Air: 15 Days | Ocean: 30 Days',
+                'salesperson': 'Multimodal Rep',
+                'branch': 'Ahmedabad (AMD)',
+                'registered_address': 'GIDC Cargo Complex, Ahmedabad',
+                'commercial_mode': 'Both',
+                'iata_credit_days': '15 Days',
+                'ocean_credit_days': '30 Days',
+                'risk_grade_score': 'Rx2 (85)',
+                'risk_description': 'Very Low Risk',
+                'kyc_documents': [],
+                'created_by': 'Analyst',
+                'checked_by': 'Manager',
+                'approved_by': 'Director',
+                'date': '11/11/2026'
+            }
+            build_crif_docx(both_payload, both_path)
+            doc_both = docx.Document(both_path)
+            both_text = " ".join([c.text for t in doc_both.tables for r in t.rows for c in r.cells])
+            self.assertIn("Both (Air & Ocean Freight)", both_text)
+            self.assertIn("IATA Air Freight Tenor", both_text)
+            self.assertIn("Ocean / Multimodal Tenor", both_text)
+            self.assertIn("Ahmedabad (AMD)", both_text)
+        finally:
+            if os.path.exists(both_path):
+                os.remove(both_path)
 
     def test_database_audit_record(self):
         appraisal_id = save_appraisal(

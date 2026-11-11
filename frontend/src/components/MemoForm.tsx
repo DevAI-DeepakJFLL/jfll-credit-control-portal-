@@ -135,8 +135,8 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
           <span>1. Customer Identity & Entity Profile</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="md:col-span-3">
             <label className="block text-xs font-semibold text-slate-600 mb-1">Customer Legal Name</label>
             <input
               type="text"
@@ -174,7 +174,32 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
             />
           </div>
 
-          <div className="md:col-span-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Operating / Booking Branch</label>
+            <input
+              type="text"
+              list="jfll-branches-list"
+              value={data.branch || ''}
+              placeholder="e.g. Mumbai Air Cargo, Delhi..."
+              onChange={(e) => onChange({ branch: e.target.value })}
+              className="w-full px-3.5 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 bg-white focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1 transition"
+            />
+            <datalist id="jfll-branches-list">
+              <option value="Mumbai Air Cargo" />
+              <option value="Mumbai Seaport (Nhava Sheva)" />
+              <option value="Delhi (DEL)" />
+              <option value="Ahmedabad (AMD)" />
+              <option value="Bangalore (BLR)" />
+              <option value="Chennai (MAA)" />
+              <option value="Hyderabad (HYD)" />
+              <option value="Kolkata (CCU)" />
+              <option value="Pune (PNQ)" />
+              <option value="Mundra Port" />
+              <option value="Surat" />
+            </datalist>
+          </div>
+
+          <div className="md:col-span-3">
             <label className="block text-xs font-semibold text-slate-600 mb-1">Registered / Business Address</label>
             <textarea
               rows={2}
@@ -184,7 +209,7 @@ export const MemoForm: React.FC<MemoFormProps> = ({ data, onChange, onGenerate, 
             />
           </div>
 
-          <div className="md:col-span-2">
+          <div className="md:col-span-3">
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-semibold text-slate-600">
                 Additional Information (Special Notes / Group Background)
