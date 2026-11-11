@@ -2,7 +2,7 @@ import os
 import docx
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 from typing import Dict, Any
@@ -49,19 +49,20 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     normal_style.font.size = Pt(9.5)
     normal_style.font.color.rgb = RGBColor(30, 41, 59)
     
-    # 1. Header Banner
+    # 1. Executive Corporate Letterhead & Document Title Header
     logo_path = _RESOLVED_LOGO_PATH if (_RESOLVED_LOGO_PATH and os.path.exists(_RESOLVED_LOGO_PATH)) else next((p for p in _LOGO_CANDIDATES if os.path.exists(p)), None)
 
     cols = 3 if logo_path else 2
-    header_table = doc.add_table(rows=1, cols=cols)
+    header_table = doc.add_table(rows=2, cols=cols)
     header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     header_table.autofit = False
-    col_widths = [Inches(1.0), Inches(3.8), Inches(2.2)] if logo_path else [Inches(4.6), Inches(2.4)]
+    col_widths = [Inches(0.95), Inches(3.75), Inches(2.30)] if logo_path else [Inches(4.65), Inches(2.35)]
     
     for i, cell in enumerate(header_table.rows[0].cells):
         cell.width = col_widths[i]
-        set_cell_margins(cell, top=60, bottom=60, left=60, right=60)
-        set_cell_borders(cell, bottom=('single', '12', '1E3A8A'))
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        set_cell_margins(cell, top=60, bottom=60, left=40, right=40)
+        set_cell_borders(cell, bottom=('single', '14', '1E3A8A'))
         
     if logo_path:
         logo_cell = header_table.cell(0, 0)
@@ -69,55 +70,101 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
         p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p_logo.paragraph_format.space_before = Pt(0)
         p_logo.paragraph_format.space_after = Pt(0)
-        p_logo.add_run().add_picture(logo_path, width=Inches(0.82))
+        p_logo.add_run().add_picture(logo_path, width=Inches(0.85))
         
     mid_cell = header_table.cell(0, 1 if logo_path else 0)
     p_brand = mid_cell.paragraphs[0]
     p_brand.paragraph_format.space_before = Pt(0)
-    p_brand.paragraph_format.space_after = Pt(2)
+    p_brand.paragraph_format.space_after = Pt(1)
     r_brand = p_brand.add_run("JET FREIGHT LOGISTICS LIMITED")
-    r_brand.font.size = Pt(13)
+    r_brand.font.size = Pt(13.5)
     r_brand.font.bold = True
-    r_brand.font.color.rgb = RGBColor(15, 23, 42)
+    r_brand.font.color.rgb = RGBColor(15, 47, 100)
     
     p_dept = mid_cell.add_paragraph()
     p_dept.paragraph_format.space_before = Pt(0)
-    p_dept.paragraph_format.space_after = Pt(3)
-    r_dept = p_dept.add_run("Credit Risk & Control Department  |  Commercial Appraisal")
+    p_dept.paragraph_format.space_after = Pt(2)
+    r_dept = p_dept.add_run("Credit Risk & Underwriting Division  |  Commercial Appraisal")
     r_dept.font.size = Pt(8.5)
-    r_dept.font.color.rgb = RGBColor(100, 116, 139)
+    r_dept.font.bold = True
+    r_dept.font.color.rgb = RGBColor(71, 85, 105)
     
-    p_title = mid_cell.add_paragraph()
-    p_title.paragraph_format.space_before = Pt(2)
-    p_title.paragraph_format.space_after = Pt(0)
-    r_title = p_title.add_run("CREDIT APPRAISAL MEMORANDUM (CRIF)")
-    r_title.font.size = Pt(11)
-    r_title.font.bold = True
-    r_title.font.color.rgb = RGBColor(30, 58, 138)
+    p_cin = mid_cell.add_paragraph()
+    p_cin.paragraph_format.space_before = Pt(0)
+    p_cin.paragraph_format.space_after = Pt(0)
+    r_cin = p_cin.add_run("An NSE Listed Company  •  ISO 9001:2015 Certified  •  CIN: L63090MH2006PLC161114")
+    r_cin.font.size = Pt(7)
+    r_cin.font.color.rgb = RGBColor(148, 163, 184)
     
     right_cell = header_table.cell(0, 2 if logo_path else 1)
-    p_meta = right_cell.paragraphs[0]
-    p_meta.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p_meta.paragraph_format.space_before = Pt(0)
-    p_meta.paragraph_format.space_after = Pt(2)
-    
-    r_date_lbl = p_meta.add_run("Date: ")
+    p_date = right_cell.paragraphs[0]
+    p_date.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_date.paragraph_format.space_before = Pt(0)
+    p_date.paragraph_format.space_after = Pt(1)
+    r_date_lbl = p_date.add_run("Date: ")
     r_date_lbl.font.bold = True
-    r_date_lbl.font.size = Pt(9)
-    r_date_val = p_meta.add_run(data.get('date', 'N/A') + "\n")
-    r_date_val.font.size = Pt(9)
+    r_date_lbl.font.size = Pt(8.5)
+    r_date_lbl.font.color.rgb = RGBColor(71, 85, 105)
+    r_date_val = p_date.add_run(data.get('date', 'N/A'))
+    r_date_val.font.size = Pt(8.5)
+    r_date_val.font.color.rgb = RGBColor(15, 23, 42)
     
+    p_src = right_cell.add_paragraph()
+    p_src.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_src.paragraph_format.space_before = Pt(0)
+    p_src.paragraph_format.space_after = Pt(3)
     bureau_source = data.get('bureau_source') or "Rubix Data Sciences"
-    r_ref_lbl = p_meta.add_run("Source: ")
+    r_ref_lbl = p_src.add_run("Source: ")
     r_ref_lbl.font.bold = True
     r_ref_lbl.font.size = Pt(8.5)
-    r_ref_val = p_meta.add_run(f"{bureau_source}\n")
+    r_ref_lbl.font.color.rgb = RGBColor(71, 85, 105)
+    r_ref_val = p_src.add_run(bureau_source)
     r_ref_val.font.size = Pt(8.5)
+    r_ref_val.font.color.rgb = RGBColor(15, 23, 42)
     
-    r_status = p_meta.add_run("STATUS: APPROVED")
+    p_status = right_cell.add_paragraph()
+    p_status.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_status.paragraph_format.space_before = Pt(1)
+    p_status.paragraph_format.space_after = Pt(0)
+    r_status = p_status.add_run("  ✔ SANCTIONED & APPROVED  ")
     r_status.font.bold = True
-    r_status.font.size = Pt(8.5)
+    r_status.font.size = Pt(8)
     r_status.font.color.rgb = RGBColor(5, 150, 105)
+    rPr = r_status._r.get_or_add_rPr()
+    shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="ECFDF5"/>')
+    bdr = parse_xml(f'<w:bdr {nsdecls("w")} w:val="single" w:sz="4" w:space="2" w:color="A7F3D0"/>')
+    rPr.append(shd)
+    rPr.append(bdr)
+    
+    # Row 1: Merged Prominent Document Title Band
+    title_cell = header_table.cell(1, 0)
+    title_cell.merge(header_table.cell(1, cols - 1))
+    title_cell.width = Inches(7.0)
+    set_cell_background(title_cell, "F8FAFC")
+    set_cell_margins(title_cell, top=65, bottom=65, left=100, right=100)
+    set_cell_borders(title_cell,
+        top=('single', '4', 'E2E8F0'),
+        bottom=('single', '8', 'CBD5E1'),
+        left=('single', '18', '1E3A8A'),
+        right=('single', '4', 'E2E8F0')
+    )
+    
+    p_title = title_cell.paragraphs[0]
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.space_before = Pt(0)
+    p_title.paragraph_format.space_after = Pt(1)
+    r_title = p_title.add_run("CREDIT APPRAISAL MEMORANDUM (CRIF / CAM)")
+    r_title.font.size = Pt(12)
+    r_title.font.bold = True
+    r_title.font.color.rgb = RGBColor(15, 23, 42)
+    
+    p_subtitle = title_cell.add_paragraph()
+    p_subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_subtitle.paragraph_format.space_before = Pt(0)
+    p_subtitle.paragraph_format.space_after = Pt(0)
+    r_sub = p_subtitle.add_run("Underwriting Evaluation, Credit Limit Sanction & Statutory Risk Assessment")
+    r_sub.font.size = Pt(7.5)
+    r_sub.font.color.rgb = RGBColor(100, 116, 139)
     
     doc.add_paragraph().paragraph_format.space_after = Pt(4)
     
