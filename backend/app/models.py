@@ -23,8 +23,16 @@ class BaseAppraisalData(BaseModel):
     iata_credit_days: str = "21 Days"
     ocean_credit_days: str = "30 Days"
     commercial_mode: str = "Both"
+    customs_duty_terms: str = "0 Days (Immediate / COD)"
     additional_info: str = ""
     mail_approval: str = ""
+    
+    # Statutory bureau compliance highlights
+    gst_delay_days: int = 0
+    pf_delay_days: int = 0
+    active_gst_count: int = 1
+    court_cases_count: int = 0
+    external_rating: str = "Not Found"
     
     # Workflow sign-offs & KYC
     kyc_documents: List[KYCItem] = Field(default_factory=list)
@@ -42,16 +50,8 @@ class RubixExtractedData(BaseAppraisalData):
     risk_grade: str = "Rx5"
     risk_description: str = "Above Average Counterparty Risk"
     
-    # Statutory Compliance Highlights
-    gst_delay_days: int = 0
-    pf_delay_days: int = 0
-    active_gst_count: int = 1
-    court_cases_count: int = 0
-    external_rating: str = "Not Found"
-    
     # Form specifics
     branch: str = "Mumbai Air Cargo"
-    customs_duty_terms: str = "0 Days (Advance COD)"
     appraisal_date: str = ""
 
 class GenerateDocxRequest(BaseAppraisalData):

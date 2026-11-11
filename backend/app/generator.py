@@ -49,11 +49,11 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     normal_style.font.size = Pt(9.5)
     normal_style.font.color.rgb = RGBColor(30, 41, 59)
     
-    # 1. Executive Corporate Letterhead & Document Title Header
+    # 1. Executive Corporate Letterhead
     logo_path = _RESOLVED_LOGO_PATH if (_RESOLVED_LOGO_PATH and os.path.exists(_RESOLVED_LOGO_PATH)) else next((p for p in _LOGO_CANDIDATES if os.path.exists(p)), None)
 
     cols = 3 if logo_path else 2
-    header_table = doc.add_table(rows=2, cols=cols)
+    header_table = doc.add_table(rows=1, cols=cols)
     header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     header_table.autofit = False
     col_widths = [Inches(0.95), Inches(3.75), Inches(2.30)] if logo_path else [Inches(4.65), Inches(2.35)]
@@ -61,7 +61,7 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     for i, cell in enumerate(header_table.rows[0].cells):
         cell.width = col_widths[i]
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-        set_cell_margins(cell, top=60, bottom=60, left=40, right=40)
+        set_cell_margins(cell, top=50, bottom=50, left=30, right=30)
         set_cell_borders(cell, bottom=('single', '14', '1E3A8A'))
         
     if logo_path:
@@ -81,20 +81,20 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     r_brand.font.bold = True
     r_brand.font.color.rgb = RGBColor(15, 47, 100)
     
+    p_title = mid_cell.add_paragraph()
+    p_title.paragraph_format.space_before = Pt(0)
+    p_title.paragraph_format.space_after = Pt(2)
+    r_title = p_title.add_run("CREDIT APPRAISAL MEMORANDUM (CRIF)")
+    r_title.font.size = Pt(10.5)
+    r_title.font.bold = True
+    r_title.font.color.rgb = RGBColor(30, 58, 138)
+    
     p_dept = mid_cell.add_paragraph()
     p_dept.paragraph_format.space_before = Pt(0)
-    p_dept.paragraph_format.space_after = Pt(2)
+    p_dept.paragraph_format.space_after = Pt(0)
     r_dept = p_dept.add_run("Credit Risk & Underwriting Division  |  Commercial Appraisal")
-    r_dept.font.size = Pt(8.5)
-    r_dept.font.bold = True
-    r_dept.font.color.rgb = RGBColor(71, 85, 105)
-    
-    p_cin = mid_cell.add_paragraph()
-    p_cin.paragraph_format.space_before = Pt(0)
-    p_cin.paragraph_format.space_after = Pt(0)
-    r_cin = p_cin.add_run("An NSE Listed Company  •  ISO 9001:2015 Certified  •  CIN: L63090MH2006PLC161114")
-    r_cin.font.size = Pt(7)
-    r_cin.font.color.rgb = RGBColor(148, 163, 184)
+    r_dept.font.size = Pt(8.0)
+    r_dept.font.color.rgb = RGBColor(100, 116, 139)
     
     right_cell = header_table.cell(0, 2 if logo_path else 1)
     p_date = right_cell.paragraphs[0]
@@ -135,36 +135,6 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     bdr = parse_xml(f'<w:bdr {nsdecls("w")} w:val="single" w:sz="4" w:space="2" w:color="A7F3D0"/>')
     rPr.append(shd)
     rPr.append(bdr)
-    
-    # Row 1: Merged Prominent Document Title Band
-    title_cell = header_table.cell(1, 0)
-    title_cell.merge(header_table.cell(1, cols - 1))
-    title_cell.width = Inches(7.0)
-    set_cell_background(title_cell, "F8FAFC")
-    set_cell_margins(title_cell, top=65, bottom=65, left=100, right=100)
-    set_cell_borders(title_cell,
-        top=('single', '4', 'E2E8F0'),
-        bottom=('single', '8', 'CBD5E1'),
-        left=('single', '18', '1E3A8A'),
-        right=('single', '4', 'E2E8F0')
-    )
-    
-    p_title = title_cell.paragraphs[0]
-    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_title.paragraph_format.space_before = Pt(0)
-    p_title.paragraph_format.space_after = Pt(1)
-    r_title = p_title.add_run("CREDIT APPRAISAL MEMORANDUM (CRIF / CAM)")
-    r_title.font.size = Pt(12)
-    r_title.font.bold = True
-    r_title.font.color.rgb = RGBColor(15, 23, 42)
-    
-    p_subtitle = title_cell.add_paragraph()
-    p_subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_subtitle.paragraph_format.space_before = Pt(0)
-    p_subtitle.paragraph_format.space_after = Pt(0)
-    r_sub = p_subtitle.add_run("Underwriting Evaluation, Credit Limit Sanction & Statutory Risk Assessment")
-    r_sub.font.size = Pt(7.5)
-    r_sub.font.color.rgb = RGBColor(100, 116, 139)
     
     doc.add_paragraph().paragraph_format.space_after = Pt(4)
     
@@ -313,8 +283,70 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
     r_nob.font.color.rgb = RGBColor(30, 41, 59)
     r_nob.font.italic = True
 
-    # 5. KYC Checklist
-    add_section_header("3. KYC VERIFICATION & STATUTORY COMPLIANCE CHECKLIST")
+    # 5. Logistics Commercial Terms & Risk Controls
+    add_section_header("3. LOGISTICS COMMERCIAL TERMS & RISK CONTROLS")
+    sec_138_val = "Collected & Held (Enforceable)" if data.get('sec_138_cheque', True) else "Not Collected / Waived"
+    caf_val = "Signed & Cargo Lien Executed" if data.get('caf_signed', True) else "Pending Signature"
+    comm_mode = data.get('commercial_mode', 'Both')
+    iata_tenor = data.get('iata_credit_days', '15 Days')
+    ocean_tenor = data.get('ocean_credit_days', '30 Days')
+    duty_terms = data.get('customs_duty_terms', '0 Days (Immediate / COD)')
+
+    terms_rows = [
+        ("Commercial Shipment Mode", comm_mode, "Customs Duty & Handling", duty_terms),
+        ("IATA Air Freight Tenor", iata_tenor if comm_mode in ('Air', 'Both') else "N/A (Ocean Only)",
+         "Ocean / Multimodal Tenor", ocean_tenor if comm_mode in ('Ocean', 'Both') else "N/A (Air Only)"),
+        ("Sec. 138 NI Act Cheque", sec_138_val, "CAF with Cargo Lien Signed", caf_val)
+    ]
+
+    statutory_highlights = []
+    if data.get('pf_delay_days', 0) > 0:
+        statutory_highlights.append(f"PF Delay: {data['pf_delay_days']} Days")
+    if data.get('gst_delay_days', 0) > 0:
+        statutory_highlights.append(f"GST Delay: {data['gst_delay_days']} Days")
+    if data.get('court_cases_count', 0) > 0:
+        statutory_highlights.append(f"Litigation: {data['court_cases_count']} Cases")
+
+    if statutory_highlights:
+        terms_rows.append(("Statutory Bureau Findings", ", ".join(statutory_highlights), "Bureau Risk Grade", data.get('risk_grade_score', 'N/A')))
+
+    terms_table = doc.add_table(rows=len(terms_rows), cols=4)
+    terms_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    terms_table.autofit = False
+    t_widths = [Inches(1.8), Inches(1.7), Inches(1.8), Inches(1.7)]
+
+    for r_idx, (lbl1, val1, lbl2, val2) in enumerate(terms_rows):
+        cells = [
+            (terms_table.cell(r_idx, 0), lbl1, True, "F8FAFC", "475569"),
+            (terms_table.cell(r_idx, 1), val1, False, "FFFFFF", "0F172A"),
+            (terms_table.cell(r_idx, 2), lbl2, True, "F8FAFC", "475569"),
+            (terms_table.cell(r_idx, 3), val2, False, "FFFFFF", "0F172A")
+        ]
+        for c_idx, (c, text_val, is_lbl, bg_col, txt_col) in enumerate(cells):
+            c.width = t_widths[c_idx]
+            set_cell_background(c, bg_col)
+            set_cell_margins(c, top=45, bottom=45, left=60, right=60)
+            b_color = "E2E8F0"
+            set_cell_borders(c, top=('single', '4', b_color), bottom=('single', '4', b_color),
+                               left=('single', '6', '1E3A8A' if (c_idx == 0 and r_idx == 0) else b_color),
+                               right=('single', '4', b_color))
+            p = c.paragraphs[0]
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
+            r = p.add_run(str(text_val))
+            r.font.size = Pt(8.0)
+            if is_lbl:
+                r.font.bold = True
+                r.font.color.rgb = RGBColor(71, 85, 105)
+            else:
+                if "Enforceable" in str(text_val) or "Executed" in str(text_val):
+                    r.font.bold = True
+                    r.font.color.rgb = RGBColor(5, 150, 105)
+                else:
+                    r.font.color.rgb = RGBColor(15, 23, 42)
+
+    # 6. KYC Checklist
+    add_section_header("4. KYC VERIFICATION & STATUTORY COMPLIANCE CHECKLIST")
     kyc_items = data.get('kyc_documents', [])
     if not kyc_items:
         kyc_items = [
@@ -369,8 +401,8 @@ def build_crif_docx(data: Dict[str, Any], output_path: str):
             else:
                 r.font.color.rgb = RGBColor(51, 65, 85)
 
-    # 6. Multi-Tier Authorization
-    add_section_header("4. MULTI-TIER CREDIT APPROVAL & SIGN-OFF")
+    # 7. Multi-Tier Authorization
+    add_section_header("5. MULTI-TIER CREDIT APPROVAL & SIGN-OFF")
     sign_table = doc.add_table(rows=3, cols=3)
     sign_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     sign_table.autofit = False

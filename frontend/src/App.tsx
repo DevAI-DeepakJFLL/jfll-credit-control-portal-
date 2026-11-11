@@ -80,6 +80,10 @@ export const App: React.FC = () => {
         date: extractedData.appraisal_date,
         sec_138_cheque: extractedData.sec_138_cheque,
         caf_signed: extractedData.caf_signed,
+        customs_duty_terms: extractedData.customs_duty_terms || '0 Days (Immediate / COD)',
+        gst_delay_days: extractedData.gst_delay_days ?? 0,
+        pf_delay_days: extractedData.pf_delay_days ?? 0,
+        court_cases_count: extractedData.court_cases_count ?? 0,
       };
 
       const res = await fetch(apiUrl('/api/generate'), {

@@ -224,6 +224,10 @@ class TestCreditControlPipeline(unittest.TestCase):
             self.assertIn("Additional Information", combined_text)
             self.assertIn("Special seasonal credit extension approved for Q4.", combined_text)
             self.assertIn("[ Approved via Email: mgmt@jetfreight.com ]", combined_text)
+            self.assertIn("Commercial Shipment Mode", combined_text)
+            self.assertIn("IATA Air Freight Tenor", combined_text)
+            self.assertIn("Sec. 138 NI Act Cheque", combined_text)
+            self.assertIn("CAF with Cargo Lien Signed", combined_text)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
