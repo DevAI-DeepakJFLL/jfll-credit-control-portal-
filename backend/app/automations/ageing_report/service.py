@@ -8,7 +8,8 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 import io
 
-from backend.app.core.database import get_db
+from backend.app.core.database import get_db, DB_PATH
+from backend.app.core.s3_storage import sync_db_to_s3, is_s3_enabled
 from backend.app.automations.ageing_report.models import (
     CustomerAgeingSummary,
     AgeingBatchSummary
@@ -112,6 +113,9 @@ def process_ageing_upload(file_bytes: bytes, filename: str) -> Tuple[str, Ageing
             rows_to_insert
         )
         conn.commit()
+
+    if is_s3_enabled():
+        sync_db_to_s3(DB_PATH)
 
     logger.info(f"Processed and saved ageing batch {batch_uuid}: {len(customers)} customers, {len(transactions)} vouchers.")
     return batch_uuid, summary
@@ -263,7 +267,12 @@ def update_customer_followup(
             params
         )
         conn.commit()
-        return cursor.rowcount > 0
+        updated = cursor.rowcount > 0
+
+    if updated and is_s3_enabled():
+        sync_db_to_s3(DB_PATH)
+
+    return updated
 
 def export_batch_excel(batch_uuid: str) -> Optional[io.BytesIO]:
     """Generates and returns the active Excel spreadsheet for the specified batch UUID."""

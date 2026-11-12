@@ -136,6 +136,15 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedFUPerson, setSelectedFUPerson] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+
+  // 300ms Search Debounce to prevent network stampedes and race conditions
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   // UI status states
   const [isUploading, setIsUploading] = useState<boolean>(false);
@@ -213,8 +222,8 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
       if (selectedFUPerson && selectedFUPerson !== 'all') {
         params.append('fu_person', selectedFUPerson);
       }
-      if (searchQuery.trim()) {
-        params.append('search', searchQuery.trim());
+      if (debouncedSearch.trim()) {
+        params.append('search', debouncedSearch.trim());
       }
 
       const res = await fetch(apiUrl(`/api/ageing/customers/${selectedBatchUuid}?${params.toString()}`));
@@ -228,7 +237,7 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
     } finally {
       setIsLoadingCustomers(false);
     }
-  }, [selectedBatchUuid, page, pageSize, selectedBranch, selectedFUPerson, searchQuery]);
+  }, [selectedBatchUuid, page, pageSize, selectedBranch, selectedFUPerson, debouncedSearch]);
 
   useEffect(() => {
     if (selectedBatchUuid) {
@@ -358,10 +367,11 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                   setSelectedBatchUuid(e.target.value);
                   setPage(1);
                 }}
-                className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 bg-white shadow-2xs hover:border-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                style={{ colorScheme: 'light' }}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-800 bg-white shadow-2xs hover:border-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               >
                 {batches.map((b) => (
-                  <option key={b.batch_uuid} value={b.batch_uuid}>
+                  <option key={b.batch_uuid} value={b.batch_uuid} className="bg-white text-slate-900">
                     {b.filename} ({b.posting_cutoff_date || 'Current'})
                   </option>
                 ))}
@@ -724,7 +734,8 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                       setSelectedBranch(e.target.value);
                       setPage(1);
                     }}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-700 bg-white shadow-2xs"
+                    style={{ colorScheme: 'light' }}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-800 bg-white shadow-2xs focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">All Branches</option>
                     <option value="Mumbai">Mumbai</option>
@@ -743,7 +754,8 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                       setSelectedFUPerson(e.target.value);
                       setPage(1);
                     }}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-700 bg-white shadow-2xs"
+                    style={{ colorScheme: 'light' }}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-800 bg-white shadow-2xs focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">All Follow-Up Persons</option>
                     <option value="Nikita">Nikita</option>
@@ -755,13 +767,13 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
               </div>
 
               <div className="flex items-center space-x-3">
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-500 whitespace-nowrap">
                   Showing {customers.length} of {totalCustomers} debtors
                 </span>
                 <button
                   onClick={handleDownloadExcel}
                   disabled={!selectedBatchUuid}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50"
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Export Excel</span>
@@ -769,22 +781,22 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
               </div>
             </div>
 
-            {/* Table */}
+            {/* Table with strict column widths and whitespace-nowrap */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-600">
+              <table className="w-full text-left text-xs text-slate-600 min-w-[1150px]">
                 <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                   <tr>
-                    <th className="py-2.5 px-3">Follow-Up</th>
-                    <th className="py-2.5 px-3">Customer Name</th>
-                    <th className="py-2.5 px-3">Branch</th>
-                    <th className="py-2.5 px-3">Sales Person</th>
-                    <th className="py-2.5 px-3 text-right">Outstanding</th>
-                    <th className="py-2.5 px-3 text-right">This IATA</th>
-                    <th className="py-2.5 px-3 text-right">Last IATA</th>
-                    <th className="py-2.5 px-3 text-right">&gt; 90 Days</th>
-                    <th className="py-2.5 px-3 text-right">Grand Total</th>
-                    <th className="py-2.5 px-3">Remark</th>
-                    <th className="py-2.5 px-3 text-center">Action</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap w-28">Follow-Up</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap min-w-[200px] max-w-[280px]">Customer Name</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap w-24">Branch</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap w-36">Sales Person</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-32">Outstanding</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-28">This IATA</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-28">Last IATA</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-28">&gt; 90 Days</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-32">Grand Total</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap min-w-[180px] max-w-[240px]">Remark</th>
+                    <th className="py-3 px-3.5 whitespace-nowrap text-center w-20">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -807,13 +819,14 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                       const above90 = row.bucket_91_180 + row.bucket_181_240 + row.bucket_241_365 + row.bucket_above_365;
 
                       return (
-                        <tr key={row.id} className="hover:bg-slate-50 transition">
-                          <td className="py-2 px-3 font-semibold text-slate-800">
+                        <tr key={row.id} className="hover:bg-slate-50 transition h-10">
+                          <td className="py-2 px-3.5 font-semibold text-slate-800 whitespace-nowrap">
                             {isEditing ? (
                               <select
                                 value={editFUPerson}
                                 onChange={(e) => setEditFUPerson(e.target.value)}
-                                className="px-2 py-1 rounded border border-blue-400 text-xs bg-white"
+                                style={{ colorScheme: 'light' }}
+                                className="px-2 py-1 rounded border border-blue-400 text-xs bg-white text-slate-800"
                               >
                                 <option value="Nikita">Nikita</option>
                                 <option value="Vaibhav">Vaibhav</option>
@@ -821,7 +834,7 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                                 <option value="Other">Other</option>
                               </select>
                             ) : (
-                              <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
+                              <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap ${
                                 row.fu_person === 'Nikita' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
                                 row.fu_person === 'Vaibhav' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
                                 row.fu_person === 'Siddhesh' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
@@ -831,33 +844,33 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                               </span>
                             )}
                           </td>
-                          <td className="py-2 px-3 font-semibold text-slate-900 max-w-xs truncate" title={row.customer_name}>
+                          <td className="py-2 px-3.5 font-bold text-slate-900 min-w-[200px] max-w-[280px] truncate" title={row.customer_name}>
                             {row.customer_name}
                           </td>
-                          <td className="py-2 px-3">{row.branch}</td>
-                          <td className="py-2 px-3 text-slate-600">{row.sales_person}</td>
-                          <td className="py-2 px-3 text-right font-bold text-slate-900">
-                            ₹ {row.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          <td className="py-2 px-3.5 whitespace-nowrap text-slate-700">{row.branch}</td>
+                          <td className="py-2 px-3.5 whitespace-nowrap text-slate-600">{row.sales_person}</td>
+                          <td className="py-2 px-3.5 text-right font-bold text-slate-900 whitespace-nowrap tabular-nums">
+                            ₹&nbsp;{row.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                           </td>
-                          <td className="py-2 px-3 text-right text-blue-700 font-semibold">
-                            ₹ {row.this_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          <td className="py-2 px-3.5 text-right text-blue-700 font-semibold whitespace-nowrap tabular-nums">
+                            ₹&nbsp;{row.this_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                           </td>
-                          <td className="py-2 px-3 text-right text-indigo-700 font-semibold">
-                            ₹ {row.last_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          <td className="py-2 px-3.5 text-right text-indigo-700 font-semibold whitespace-nowrap tabular-nums">
+                            ₹&nbsp;{row.last_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                           </td>
-                          <td className="py-2 px-3 text-right text-rose-700 font-semibold">
-                            ₹ {above90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          <td className="py-2 px-3.5 text-right text-rose-700 font-semibold whitespace-nowrap tabular-nums">
+                            ₹&nbsp;{above90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                           </td>
-                          <td className="py-2 px-3 text-right font-semibold text-slate-800">
-                            ₹ {row.grand_total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          <td className="py-2 px-3.5 text-right font-bold text-slate-900 whitespace-nowrap tabular-nums">
+                            ₹&nbsp;{row.grand_total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                           </td>
-                          <td className="py-2 px-3 text-slate-500 italic max-w-xs">
+                          <td className="py-2 px-3.5 text-slate-500 italic min-w-[180px] max-w-[240px]">
                             {isEditing ? (
                               <input
                                 type="text"
                                 value={editRemark}
                                 onChange={(e) => setEditRemark(e.target.value)}
-                                className="w-full px-2 py-1 rounded border border-blue-400 text-xs bg-white"
+                                className="w-full px-2 py-1 rounded border border-blue-400 text-xs bg-white text-slate-800"
                                 placeholder="Add follow-up notes..."
                               />
                             ) : (
@@ -866,7 +879,7 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                               </span>
                             )}
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-2 px-3.5 text-center whitespace-nowrap">
                             {isEditing ? (
                               <div className="flex items-center justify-center space-x-1">
                                 <button

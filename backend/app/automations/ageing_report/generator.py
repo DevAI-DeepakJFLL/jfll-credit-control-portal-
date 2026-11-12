@@ -9,6 +9,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from backend.app.automations.ageing_report.models import CustomerAgeingSummary
+from backend.app.automations.ageing_report.engine import resolve_overdue_start
 
 # Corporate Theme Colors
 NAVY_HEADER = "1F4E78"
@@ -135,8 +136,9 @@ def generate_ageing_report_excel(
         ws_final.cell(row=r, column=4, value=c.customer_name).alignment = align_left
         ws_final.cell(row=r, column=5, value=c.payment_terms).alignment = align_left
 
-        # Formula: Outstanding =SUM(L{r}:R{r})
-        c_out = ws_final.cell(row=r, column=6, value=f"=SUM(L{r}:R{r})")
+        # Formula: Dynamic Outstanding based on customer payment terms
+        _, start_col = resolve_overdue_start(c.payment_terms)
+        c_out = ws_final.cell(row=r, column=6, value=f"=SUM({start_col}{r}:R{r})")
         c_out.alignment = align_right
         c_out.number_format = num_fmt_curr
         c_out.font = font_bold
@@ -249,12 +251,13 @@ def generate_ageing_report_excel(
             cur_r += 1
 
     # Grand Total row
-    ws_s2.cell(row=cur_r, column=1, value="Grand Total").font = font_bold
-    ws_s2.cell(row=cur_r, column=2, value=f"=SUM(B4:B{cur_r-1})").font = font_bold
-    ws_s2.cell(row=cur_r, column=3, value=f"=SUM(C4:C{cur_r-1})").font = font_bold
-    ws_s2.cell(row=cur_r, column=4, value=f"=SUM(D4:D{cur_r-1})").font = font_bold
+    s1_gt_row = cur_r
+    ws_s2.cell(row=s1_gt_row, column=1, value="Grand Total").font = font_bold
+    ws_s2.cell(row=s1_gt_row, column=2, value=f"=SUM(B4:B{s1_gt_row-1})").font = font_bold
+    ws_s2.cell(row=s1_gt_row, column=3, value=f"=SUM(C4:C{s1_gt_row-1})").font = font_bold
+    ws_s2.cell(row=s1_gt_row, column=4, value=f"=SUM(D4:D{s1_gt_row-1})").font = font_bold
     for col_i in (2, 3, 4):
-        c_gt = ws_s2.cell(row=cur_r, column=col_i)
+        c_gt = ws_s2.cell(row=s1_gt_row, column=col_i)
         c_gt.number_format = num_fmt_curr
         c_gt.alignment = align_right
 
@@ -267,21 +270,17 @@ def generate_ageing_report_excel(
     ws_s2.cell(row=cur_r, column=4, value=" Balance").font = font_bold
     cur_r += 1
 
-    start_breakdown_r = cur_r
+    fu_parent_rows = []
     for fu_name in ["Nikita", "Siddhesh", "Vaibhav", "Other"]:
         if fu_name in fu_branch_summary:
-            ws_s2.cell(row=cur_r, column=1, value=fu_name).font = font_bold
-            f_data = fu_summary[fu_name]
-            c1 = ws_s2.cell(row=cur_r, column=2, value=f_data["out"])
-            c2 = ws_s2.cell(row=cur_r, column=3, value=f_data["rec"])
-            c3 = ws_s2.cell(row=cur_r, column=4, value=f_data["bal"])
-            for cell in (c1, c2, c3):
-                cell.font = font_bold
-                cell.number_format = num_fmt_curr
-                cell.alignment = align_right
+            parent_r = cur_r
+            fu_parent_rows.append(parent_r)
+            ws_s2.cell(row=parent_r, column=1, value=fu_name).font = font_bold
             cur_r += 1
 
-            for b_name, b_data in sorted(fu_branch_summary[fu_name].items()):
+            branch_items = sorted(fu_branch_summary[fu_name].items())
+            branch_start_r = cur_r
+            for b_name, b_data in branch_items:
                 ws_s2.cell(row=cur_r, column=1, value=f"  {b_name}")
                 cb1 = ws_s2.cell(row=cur_r, column=2, value=b_data["out"])
                 cb2 = ws_s2.cell(row=cur_r, column=3, value=b_data["rec"])
@@ -290,15 +289,38 @@ def generate_ageing_report_excel(
                     cell.number_format = num_fmt_curr
                     cell.alignment = align_right
                 cur_r += 1
+            branch_end_r = cur_r - 1
 
-    # Final Grand Total for breakdown
+            # Dynamic formula for FU parent row in Section 2 summing its branch children
+            if branch_start_r <= branch_end_r:
+                c1 = ws_s2.cell(row=parent_r, column=2, value=f"=SUM(B{branch_start_r}:B{branch_end_r})")
+                c2 = ws_s2.cell(row=parent_r, column=3, value=f"=SUM(C{branch_start_r}:C{branch_end_r})")
+                c3 = ws_s2.cell(row=parent_r, column=4, value=f"=SUM(D{branch_start_r}:D{branch_end_r})")
+            else:
+                f_data = fu_summary[fu_name]
+                c1 = ws_s2.cell(row=parent_r, column=2, value=f_data["out"])
+                c2 = ws_s2.cell(row=parent_r, column=3, value=f_data["rec"])
+                c3 = ws_s2.cell(row=parent_r, column=4, value=f_data["bal"])
+
+            for cell in (c1, c2, c3):
+                cell.font = font_bold
+                cell.number_format = num_fmt_curr
+                cell.alignment = align_right
+
+    # Final Grand Total for breakdown using dynamic SUM formula
     ws_s2.cell(row=cur_r, column=1, value="Grand Total").font = font_bold
-    tot_out = sum(fu_summary[f]["out"] for f in fu_summary)
-    tot_rec = sum(fu_summary[f]["rec"] for f in fu_summary)
-    tot_bal = sum(fu_summary[f]["bal"] for f in fu_summary)
-    c1 = ws_s2.cell(row=cur_r, column=2, value=tot_out)
-    c2 = ws_s2.cell(row=cur_r, column=3, value=tot_rec)
-    c3 = ws_s2.cell(row=cur_r, column=4, value=tot_bal)
+    if fu_parent_rows:
+        sum_b = f"=SUM({','.join(f'B{r}' for r in fu_parent_rows)})"
+        sum_c = f"=SUM({','.join(f'C{r}' for r in fu_parent_rows)})"
+        sum_d = f"=SUM({','.join(f'D{r}' for r in fu_parent_rows)})"
+    else:
+        sum_b = f"=B{s1_gt_row}"
+        sum_c = f"=C{s1_gt_row}"
+        sum_d = f"=D{s1_gt_row}"
+
+    c1 = ws_s2.cell(row=cur_r, column=2, value=sum_b)
+    c2 = ws_s2.cell(row=cur_r, column=3, value=sum_c)
+    c3 = ws_s2.cell(row=cur_r, column=4, value=sum_d)
     for cell in (c1, c2, c3):
         cell.font = font_bold
         cell.number_format = num_fmt_curr

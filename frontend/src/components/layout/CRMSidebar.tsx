@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { CRMAutomationId } from '../../types/shared';
 import { 
   ShieldCheck, 
@@ -42,24 +42,35 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
   isMobileOpen,
   setIsMobileOpen
 }) => {
+  // Dismiss mobile drawer on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isMobileOpen) {
+        setIsMobileOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileOpen, setIsMobileOpen]);
+
   return (
     <>
       {/* Mobile Backdrop Overlay */}
       {isMobileOpen && (
         <div 
           onClick={() => setIsMobileOpen(false)}
-          className="fixed inset-0 bg-slate-900/60 z-40 md:hidden backdrop-blur-xs transition-opacity"
+          className="fixed inset-0 bg-slate-950/70 z-40 md:hidden backdrop-blur-sm transition-opacity"
         />
       )}
 
-      {/* WordPress-Style Dark Sidebar */}
+      {/* Enterprise Deep Navy Sidebar */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 bg-[#1e2327] text-slate-200 border-r border-[#2c3338] flex flex-col transition-all duration-200 ease-in-out ${
+        className={`fixed top-0 bottom-0 left-0 z-50 bg-[#0f172a] text-slate-200 border-r border-slate-800 flex flex-col transition-all duration-200 ease-in-out ${
           isMobileOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0'
         } ${isCollapsed ? 'md:w-16' : 'md:w-64'}`}
       >
         {/* Sidebar Brand Header */}
-        <div className="h-16 flex items-center justify-between px-3.5 border-b border-[#2c3338] bg-[#15191c]">
+        <div className="h-16 flex items-center justify-between px-3.5 border-b border-slate-800 bg-[#020617]">
           <div 
             onClick={() => {
               setActiveAutomation('credit-appraisal');
@@ -108,8 +119,8 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
               onClick={() => setActiveAutomation('credit-appraisal')}
               className={`w-full flex items-center justify-between px-2.5 py-2.5 rounded-md transition cursor-pointer ${
                 activeAutomation === 'credit-appraisal'
-                  ? 'bg-[#2271b1] text-white font-bold shadow-xs'
-                  : 'text-slate-300 hover:bg-[#2c3338] hover:text-white'
+                  ? 'bg-blue-600 text-white font-bold shadow-xs'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
               title="Credit Appraisal Memorandum (CRIF & Rubix)"
             >
@@ -140,8 +151,8 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
                   onClick={() => setCreditSubTab('create')}
                   className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-md text-[11px] transition cursor-pointer ${
                     creditSubTab === 'create'
-                      ? 'text-white font-bold bg-[#2c3338]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-[#2c3338]/50'
+                      ? 'text-white font-bold bg-slate-800'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5 text-slate-400" />
@@ -151,8 +162,8 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
                   onClick={() => setCreditSubTab('history')}
                   className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-md text-[11px] transition cursor-pointer ${
                     creditSubTab === 'history'
-                      ? 'text-white font-bold bg-[#2c3338]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-[#2c3338]/50'
+                      ? 'text-white font-bold bg-slate-800'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
                   <History className="w-3.5 h-3.5 text-slate-400" />
@@ -168,8 +179,8 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
               onClick={() => setActiveAutomation('ageing-report')}
               className={`w-full flex items-center justify-between px-2.5 py-2.5 rounded-md transition cursor-pointer ${
                 activeAutomation === 'ageing-report'
-                  ? 'bg-[#2271b1] text-white font-bold shadow-xs'
-                  : 'text-slate-300 hover:bg-[#2c3338] hover:text-white'
+                  ? 'bg-blue-600 text-white font-bold shadow-xs'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
               title="Accounts Receivable Ageing Report"
             >
@@ -200,8 +211,8 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
                   onClick={() => setAgeingSubTab('upload')}
                   className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-md text-[11px] transition cursor-pointer ${
                     ageingSubTab === 'upload'
-                      ? 'text-white font-bold bg-[#2c3338]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-[#2c3338]/50'
+                      ? 'text-white font-bold bg-slate-800'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
                   <UploadCloud className="w-3.5 h-3.5 text-slate-400" />
@@ -211,8 +222,8 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
                   onClick={() => setAgeingSubTab('dashboard')}
                   className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-md text-[11px] transition cursor-pointer ${
                     ageingSubTab === 'dashboard'
-                      ? 'text-white font-bold bg-[#2c3338]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-[#2c3338]/50'
+                      ? 'text-white font-bold bg-slate-800'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
                   <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
@@ -222,8 +233,8 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
                   onClick={() => setAgeingSubTab('customers')}
                   className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-md text-[11px] transition cursor-pointer ${
                     ageingSubTab === 'customers'
-                      ? 'text-white font-bold bg-[#2c3338]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-[#2c3338]/50'
+                      ? 'text-white font-bold bg-slate-800'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
                   <Users className="w-3.5 h-3.5 text-slate-400" />
@@ -265,7 +276,7 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
             href="/api/health"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full flex items-center justify-between px-2.5 py-2 rounded-md text-slate-400 hover:text-white hover:bg-[#2c3338] transition cursor-pointer text-xs"
+            className="w-full flex items-center justify-between px-2.5 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer text-xs"
             title="FastAPI System Health & Metadata"
           >
             <div className="flex items-center space-x-2.5 min-w-0">
@@ -277,7 +288,7 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
         </nav>
 
         {/* Sidebar Footer with Collapse Toggle */}
-        <div className="p-3 border-t border-[#2c3338] bg-[#15191c] flex items-center justify-between">
+        <div className="p-3 border-t border-slate-800 bg-[#020617] flex items-center justify-between">
           {!isCollapsed && (
             <div className="text-[11px] text-slate-400">
               <p className="font-semibold text-slate-300">Jet Freight v1.2</p>
@@ -286,7 +297,7 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
           )}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="hidden md:flex p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-[#2c3338] transition cursor-pointer mx-auto"
+            className="hidden md:flex p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer mx-auto"
             title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >

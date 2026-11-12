@@ -109,25 +109,29 @@ def parse_master_ar_file(
                     return idx
         return None
 
-    i_customer = find_idx("customer") or 1
-    i_voucher_no = find_idx("voucher no", "voucher") or 2
-    i_voucher_type = find_idx("voucher type") or 3
-    i_posting_date = find_idx("posting date") or 4
-    i_currency = find_idx("currency") or 5
-    i_ex_rate = find_idx("ex. rate", "rate") or 7
-    i_inv_amt = find_idx("invoice amount", "invoice amt") or 8
-    i_alloc_amt = find_idx("allocated amt", "allocated") or 9
-    i_credit_note = find_idx("credit note") or 10
-    i_out_amt = find_idx("outstanding amt") or 11
-    i_overdue = find_idx("overdue") or 12
-    i_on_account = find_idx("on account amt", "on account") or 13
-    i_net_outstanding = find_idx("net outstanding amt (inr)", "net outstanding amt", "net outstanding") or 15
-    i_due_date = find_idx("due date") or 16
-    i_age_days = find_idx("age (days)", "age") or 17
-    i_payment_terms = find_idx("payment terms", "terms") or 30
-    i_sales_person = find_idx("sales person", "sales") or 31
-    i_branch = find_idx("branch") or 32
-    i_remarks = find_idx("remarks", "remark") or 33
+    def resolve_idx(default_idx: int, *candidates: str) -> int:
+        idx = find_idx(*candidates)
+        return idx if idx is not None else default_idx
+
+    i_customer = resolve_idx(1, "customer")
+    i_voucher_no = resolve_idx(2, "voucher no", "voucher")
+    i_voucher_type = resolve_idx(3, "voucher type")
+    i_posting_date = resolve_idx(4, "posting date")
+    i_currency = resolve_idx(5, "currency")
+    i_ex_rate = resolve_idx(7, "ex. rate", "rate")
+    i_inv_amt = resolve_idx(8, "invoice amount", "invoice amt")
+    i_alloc_amt = resolve_idx(9, "allocated amt", "allocated")
+    i_credit_note = resolve_idx(10, "credit note")
+    i_out_amt = resolve_idx(11, "outstanding amt")
+    i_overdue = resolve_idx(12, "overdue")
+    i_on_account = resolve_idx(13, "on account amt", "on account")
+    i_net_outstanding = resolve_idx(15, "net outstanding amt (inr)", "net outstanding amt", "net outstanding")
+    i_due_date = resolve_idx(16, "due date")
+    i_age_days = resolve_idx(17, "age (days)", "age")
+    i_payment_terms = resolve_idx(30, "payment terms", "terms")
+    i_sales_person = resolve_idx(31, "sales person", "sales")
+    i_branch = resolve_idx(32, "branch")
+    i_remarks = resolve_idx(33, "remarks", "remark")
 
     transactions: List[RawTransaction] = []
     max_posting_date: Optional[datetime.date] = None

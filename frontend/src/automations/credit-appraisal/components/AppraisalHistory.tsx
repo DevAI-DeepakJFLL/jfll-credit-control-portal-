@@ -149,7 +149,7 @@ export const AppraisalHistory: React.FC = () => {
                 {paginatedItems.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/70 transition">
                     <td className="py-3.5 px-4 font-mono text-slate-400">#{item.id}</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-900">{item.customer_name}</td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900 min-w-[200px] max-w-[280px] truncate" title={item.customer_name}>{item.customer_name}</td>
                     <td className="py-3.5 px-4 font-semibold text-blue-900 tabular-nums">{item.crif_credit_limit}</td>
                     <td className="py-3.5 px-4 text-slate-700">{item.credit_days}</td>
                     <td className="py-3.5 px-4 text-slate-700">{item.salesperson}</td>

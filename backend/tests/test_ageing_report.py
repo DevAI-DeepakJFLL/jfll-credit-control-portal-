@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 import openpyxl
 
 from backend.app.main import app
-from backend.app.core.database import init_db
+from backend.app.core.database import init_db, get_db
 from backend.app.automations.ageing_report.parser import (
     normalize_branch_name,
     parse_master_ar_file
@@ -18,6 +18,7 @@ from backend.app.automations.ageing_report.engine import (
     aggregate_customer_ageing,
     calculate_batch_summary,
     resolve_fu_person,
+    resolve_overdue_start,
     format_crores_lacs
 )
 from backend.app.automations.ageing_report.generator import generate_ageing_report_excel
@@ -118,6 +119,56 @@ class TestAgeingReportModule(unittest.TestCase):
         # Grand total is 0-30 + overdue = 200k
         self.assertEqual(c.grand_total, 200_000)
 
+    def test_dynamic_payment_terms_overdue_bucketing(self):
+        # 1. Net 15 / Immediate terms -> overdue starts at 0-30 (Col K)
+        idx_15, col_15 = resolve_overdue_start("Net 15")
+        self.assertEqual(idx_15, 0)
+        self.assertEqual(col_15, "K")
+
+        idx_imm, col_imm = resolve_overdue_start("Immediate")
+        self.assertEqual(idx_imm, 0)
+        self.assertEqual(col_imm, "K")
+
+        # 2. Net 30 -> overdue starts at 31-45 (Col L)
+        idx_30, col_30 = resolve_overdue_start("Net 30")
+        self.assertEqual(idx_30, 1)
+        self.assertEqual(col_30, "L")
+
+        # 3. Net 45 -> overdue starts at 46-60 (Col M)
+        idx_45, col_45 = resolve_overdue_start("Net 45")
+        self.assertEqual(idx_45, 2)
+        self.assertEqual(col_45, "M")
+
+        # 4. Net 60 -> overdue starts at 61-90 (Col N)
+        idx_60, col_60 = resolve_overdue_start("Net 60")
+        self.assertEqual(idx_60, 3)
+        self.assertEqual(col_60, "N")
+
+        # Check aggregation with Net 15
+        tx_net15 = RawTransaction(
+            customer="IMMEDIATE CUSTOMER",
+            net_outstanding_inr=50_000,
+            age_days=10,
+            payment_terms="Net 15",
+            branch="Mumbai"
+        )
+        res_15 = aggregate_customer_ageing([tx_net15])
+        # Under Net 15, even 0-30 days balance is overdue
+        self.assertEqual(res_15[0].outstanding, 50_000)
+
+        # Check aggregation with Net 45
+        tx_net45 = RawTransaction(
+            customer="RELAXED CUSTOMER",
+            net_outstanding_inr=50_000,
+            age_days=40,  # 31-45 bucket
+            payment_terms="Net 45",
+            branch="Mumbai"
+        )
+        res_45 = aggregate_customer_ageing([tx_net45])
+        # Under Net 45, 31-45 bucket is NOT overdue yet
+        self.assertEqual(res_45[0].outstanding, 0.0)
+        self.assertEqual(res_45[0].grand_total, 50_000)
+
     def test_excel_generator_structure_and_subtotals(self):
         c1 = CustomerAgeingSummary(
             customer_name="ALPHA LOGISTICS",
@@ -135,20 +186,61 @@ class TestAgeingReportModule(unittest.TestCase):
             this_iata=80_000,
             last_iata=70_000
         )
-        excel_buf = generate_ageing_report_excel([c1], batch_title="Test")
+        c2 = CustomerAgeingSummary(
+            customer_name="BETA EXPORTS",
+            fu_person="Nikita",
+            sales_person="Ankit Srivastava",
+            branch="Mumbai",
+            payment_terms="Net 15",
+            outstanding=100_000,
+            received=0,
+            balance=100_000,
+            bucket_0_30=60_000,
+            bucket_31_45=40_000,
+            grand_total=100_000
+        )
+        excel_buf = generate_ageing_report_excel([c1, c2], batch_title="Test")
         wb = openpyxl.load_workbook(excel_buf, data_only=False)
         self.assertIn("FINAL", wb.sheetnames)
         self.assertIn("Sheet2", wb.sheetnames)
 
         ws_final = wb["FINAL"]
         # Row 1 subtotal formula
-        self.assertEqual(ws_final.cell(1, 6).value, "=SUBTOTAL(9,F3:F3)")
-        # Row 3 customer row formulas
+        self.assertEqual(ws_final.cell(1, 6).value, "=SUBTOTAL(9,F3:F4)")
+        # Row 3 customer row (Net 30 -> starts at Col L)
         self.assertEqual(ws_final.cell(3, 6).value, "=SUM(L3:R3)")
         self.assertEqual(ws_final.cell(3, 8).value, "=+F3-G3")
         self.assertEqual(ws_final.cell(3, 19).value, "=SUM(K3:R3)")
         self.assertEqual(ws_final.cell(3, 21).value, "=L3")
         self.assertEqual(ws_final.cell(3, 22).value, "=M3")
+        # Row 4 customer row (Net 15 -> starts at Col K)
+        self.assertEqual(ws_final.cell(4, 6).value, "=SUM(K4:R4)")
+
+        # Sheet2 dynamic formula checks
+        ws_s2 = wb["Sheet2"]
+        # Section 1 Grand Total uses dynamic SUM
+        self.assertEqual(ws_s2.cell(5, 1).value, "Grand Total")
+        self.assertEqual(ws_s2.cell(5, 2).value, "=SUM(B4:B4)")
+        # Section 2 Nikita parent row uses dynamic SUM over its branches
+        self.assertEqual(ws_s2.cell(8, 1).value, "Nikita")
+        self.assertEqual(ws_s2.cell(8, 2).value, "=SUM(B9:B10)")
+        # Section 2 Grand total row uses dynamic SUM over parent rows
+        self.assertEqual(ws_s2.cell(11, 1).value, "Grand Total")
+        self.assertEqual(ws_s2.cell(11, 2).value, "=SUM(B8)")
+
+    def test_sqlite_foreign_key_enforcement(self):
+        import sqlite3
+        with self.assertRaises(sqlite3.IntegrityError):
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO ageing_customer_summaries (
+                        batch_uuid, customer_name, fu_person
+                    ) VALUES ('non-existent-batch-uuid-999', 'GHOST CUSTOMER', 'Nikita')
+                    """
+                )
+                conn.commit()
 
     def test_api_upload_and_retrieve_pipeline(self):
         if not os.path.exists(self.sample_master_path):

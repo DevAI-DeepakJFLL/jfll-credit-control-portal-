@@ -3,8 +3,10 @@ FastAPI Routes for Accounts Receivable Ageing Report Automation.
 Mounted under /api/ageing
 """
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Response
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Response, Request
 from fastapi.responses import StreamingResponse
+
+from backend.app.core.rate_limit import check_rate_limit
 
 from backend.app.automations.ageing_report.models import (
     AgeingBatchSummary,
@@ -22,11 +24,12 @@ from backend.app.automations.ageing_report.service import (
 router = APIRouter()
 
 @router.post("/upload")
-async def upload_ageing_file(file: UploadFile = File(...)):
+async def upload_ageing_file(request: Request, file: UploadFile = File(...)):
     """
     Ingests raw ERP Accounts Receivable ledger (.xlsx / .xlsm), parses voucher lines,
     computes aging brackets & freight IATA tenors, persists batch, and returns executive KPIs.
     """
+    check_rate_limit(request)
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename missing")
 
@@ -105,10 +108,11 @@ def update_debtor_followup(customer_id: int, request: UpdateCustomerRequest):
     return {"status": "success", "customer_id": customer_id}
 
 @router.get("/export/{batch_uuid}")
-def export_ageing_excel(batch_uuid: str):
+def export_ageing_excel(batch_uuid: str, request: Request):
     """
     Generates and streams FINAL AGEING REPORT.xlsx with native Excel formulas and Sheet2 summary.
     """
+    check_rate_limit(request)
     excel_stream = export_batch_excel(batch_uuid)
     if not excel_stream:
         raise HTTPException(status_code=404, detail="Batch records not found for export.")

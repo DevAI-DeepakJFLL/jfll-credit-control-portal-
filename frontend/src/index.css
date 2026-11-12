@@ -2,10 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+}
+
 @layer base {
   body {
     @apply bg-slate-50 text-slate-900;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  select,
+  option {
+    background-color: #ffffff;
+    color: #0f172a;
   }
 }
 

@@ -66,7 +66,7 @@ export const CRMMasthead: React.FC<CRMMastheadProps> = ({
       <div className="flex items-center space-x-3 text-xs">
         <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-medium text-[11px] text-slate-700">FastAPI Online (Port 8001)</span>
+          <span className="font-medium text-[11px] text-slate-700">System Online</span>
         </div>
       </div>
     </header>

@@ -2,6 +2,7 @@
 Ageing Calculation Engine and Follow-Up Mapping Logic.
 Processes raw ERP transactions into standard 8-bucket customer ageing records.
 """
+import re
 import collections
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -108,6 +109,40 @@ def resolve_fu_person(
 
     return "Other"
 
+def resolve_overdue_start(payment_terms: str) -> Tuple[int, str]:
+    """
+    Returns (start_bucket_idx, start_col_letter) based on customer payment terms.
+    Buckets:
+      0: 0-30 days   -> Col 'K'
+      1: 31-45 days  -> Col 'L'
+      2: 46-60 days  -> Col 'M'
+      3: 61-90 days  -> Col 'N'
+      4: 91-180 days -> Col 'O'
+    """
+    if not payment_terms:
+        return 1, "L"
+
+    terms_clean = payment_terms.strip().lower()
+
+    if any(k in terms_clean for k in ["immediate", "advance", "cod", "cash"]):
+        return 0, "K"
+
+    match = re.search(r'\b(\d+)\b', terms_clean)
+    if match:
+        days = int(match.group(1))
+        if days <= 15:
+            return 0, "K"
+        elif days <= 30:
+            return 1, "L"
+        elif days <= 45:
+            return 2, "M"
+        elif days <= 60:
+            return 3, "N"
+        else:
+            return 4, "O"
+
+    return 1, "L"
+
 def format_crores_lacs(amount: float) -> str:
     """
     Formats currency in human-readable Indian crore/lakh notation for executive cards.
@@ -196,12 +231,13 @@ def aggregate_customer_ageing(
             else:
                 b_above_365 += net
 
-        # Overdue outstanding: Overdue balances (> 30 days)
-        # Outstanding is the sum of overdue brackets (31-45 through >365)
-        outstanding = b_31_45 + b_46_60 + b_61_90 + b_91_180 + b_181_240 + b_241_365 + b_above_365
+        # Overdue outstanding: Overdue balances dynamically determined by customer payment terms
+        start_idx, _ = resolve_overdue_start(payment_terms)
+        all_buckets = [b_0_30, b_31_45, b_46_60, b_61_90, b_91_180, b_181_240, b_241_365, b_above_365]
+        outstanding = sum(all_buckets[start_idx:])
         received = 0.0
         balance = outstanding - received
-        grand_total = b_0_30 + outstanding
+        grand_total = sum(all_buckets)
 
         # Freight-specific terms
         this_iata = b_31_45

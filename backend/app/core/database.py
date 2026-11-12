@@ -24,6 +24,7 @@ def get_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=15.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
     try:
         yield conn
     finally:
@@ -124,6 +125,7 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ageing_cust_batch ON ageing_customer_summaries(batch_uuid);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ageing_cust_branch ON ageing_customer_summaries(branch);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ageing_cust_name ON ageing_customer_summaries(customer_name);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ageing_cust_fu ON ageing_customer_summaries(batch_uuid, fu_person);')
 
         conn.commit()
 
