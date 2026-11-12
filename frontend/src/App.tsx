@@ -10,7 +10,7 @@ export const App: React.FC = () => {
     try {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
-      if (tab === 'ageing-report' || tab === 'credit-appraisal' || tab === 'dunning-exposure') {
+      if (tab === 'ageing-report' || tab === 'credit-appraisal') {
         return tab;
       }
     } catch {

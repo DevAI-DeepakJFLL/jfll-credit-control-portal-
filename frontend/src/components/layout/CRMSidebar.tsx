@@ -3,7 +3,6 @@ import { CRMAutomationId } from '../../types/shared';
 import { 
   ShieldCheck, 
   CalendarClock, 
-  BellRing, 
   FileText, 
   History, 
   UploadCloud, 
@@ -69,40 +68,69 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
           isMobileOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0'
         } ${isCollapsed ? 'md:w-16' : 'md:w-64'}`}
       >
-        {/* Sidebar Brand Header */}
-        <div className="h-16 flex items-center justify-between px-3.5 border-b border-slate-800 bg-[#020617]">
-          <div 
-            onClick={() => {
-              setActiveAutomation('credit-appraisal');
-              setCreditSubTab('create');
-            }}
-            className="flex items-center space-x-3 cursor-pointer overflow-hidden"
-          >
-            <img
-              src="/jfll-logo.jpeg"
-              alt="Jet Freight Logistics Limited"
-              className="w-9 h-9 rounded-md object-contain bg-white p-0.5 shrink-0 shadow-xs border border-slate-700/60"
-            />
-            {!isCollapsed && (
-              <div className="min-w-0">
-                <span className="font-bold text-xs tracking-wide text-white block truncate">
-                  JET FREIGHT
-                </span>
-                <span className="text-[10px] text-blue-400 font-semibold tracking-wider uppercase block truncate">
-                  Credit Control CRM
-                </span>
+        {/* Sidebar Brand Header & Top-Right Collapse Control (Benchmark: Salesforce, HubSpot, Linear) */}
+        <div className={`h-16 flex items-center border-b border-slate-800 bg-[#020617] ${
+          isCollapsed ? 'justify-center px-2' : 'justify-between px-3.5'
+        }`}>
+          {isCollapsed ? (
+            /* When collapsed: Top toggle button expands the sidebar back */
+            <button
+              type="button"
+              onClick={() => setIsCollapsed(false)}
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex items-center justify-center group"
+              title="Expand sidebar"
+              aria-label="Expand sidebar"
+            >
+              <PanelLeft className="w-5 h-5 text-blue-400 group-hover:text-white transition" />
+            </button>
+          ) : (
+            <>
+              {/* Brand Logo & Name */}
+              <div 
+                onClick={() => {
+                  setActiveAutomation('credit-appraisal');
+                  setCreditSubTab('create');
+                }}
+                className="flex items-center space-x-3 cursor-pointer overflow-hidden min-w-0"
+                title="Jet Freight Credit Control CRM"
+              >
+                <img
+                  src="/jfll-logo.jpeg"
+                  alt="Jet Freight Logistics Limited"
+                  className="w-9 h-9 rounded-md object-contain bg-white p-0.5 shrink-0 shadow-xs border border-slate-700/60"
+                />
+                <div className="min-w-0">
+                  <span className="font-bold text-xs tracking-wide text-white block truncate">
+                    JET FREIGHT
+                  </span>
+                  <span className="text-[10px] text-blue-400 font-semibold tracking-wider uppercase block truncate">
+                    Credit Control CRM
+                  </span>
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Mobile Close Button */}
-          <button
-            onClick={() => setIsMobileOpen(false)}
-            className="md:hidden p-1.5 text-slate-400 hover:text-white rounded-md transition"
-            aria-label="Close sidebar"
-          >
-            <X className="w-5 h-5" />
-          </button>
+              {/* Top-Right Collapse Toggle Button (Desktop) */}
+              <button
+                type="button"
+                onClick={() => setIsCollapsed(true)}
+                className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer shrink-0"
+                title="Collapse sidebar"
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+
+              {/* Mobile Close Button */}
+              <button
+                type="button"
+                onClick={() => setIsMobileOpen(false)}
+                className="md:hidden p-1.5 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                aria-label="Close sidebar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Sidebar Navigation Menu Items */}
@@ -193,7 +221,7 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
               {!isCollapsed && (
                 <div className="flex items-center space-x-1 shrink-0">
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    New
+                    AR
                   </span>
                   {activeAutomation === 'ageing-report' ? (
                     <ChevronDown className="w-3.5 h-3.5 text-white/80" />
@@ -244,31 +272,10 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
             )}
           </div>
 
-          {/* ITEM 3: Dunning & Risk (Disabled / Roadmap) */}
-          <div>
-            <button
-              disabled
-              className="w-full flex items-center justify-between px-2.5 py-2.5 rounded-md text-slate-500 cursor-not-allowed opacity-60"
-              title="Automated Customer Dunning & Exposure Alerts"
-            >
-              <div className="flex items-center space-x-2.5 min-w-0">
-                <BellRing className="w-4 h-4 shrink-0 text-slate-500" />
-                {!isCollapsed && (
-                  <span className="truncate">Dunning & Risk</span>
-                )}
-              </div>
-              {!isCollapsed && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700">
-                  Soon
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Section: External / Docs */}
+          {/* Section: System & Verification */}
           {!isCollapsed && (
             <div className="pt-4 px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              System & Reference
+              System & Verification
             </div>
           )}
 
@@ -287,26 +294,18 @@ export const CRMSidebar: React.FC<CRMSidebarProps> = ({
           </a>
         </nav>
 
-        {/* Sidebar Footer with Collapse Toggle */}
-        <div className="p-3 border-t border-slate-800 bg-[#020617] flex items-center justify-between">
-          {!isCollapsed && (
+        {/* Sidebar Clean Footer */}
+        <div className="p-3 border-t border-slate-800 bg-[#020617]">
+          {!isCollapsed ? (
             <div className="text-[11px] text-slate-400">
-              <p className="font-semibold text-slate-300">Jet Freight v1.2</p>
-              <p className="text-[10px] text-slate-400">Credit Control Dept</p>
+              <p className="font-semibold text-slate-300">Jet Freight Logistics</p>
+              <p className="text-[10px] text-slate-400">Credit Control Department</p>
+            </div>
+          ) : (
+            <div className="flex justify-center" title="Jet Freight Credit Control">
+              <div className="w-2 h-2 rounded-full bg-blue-500/60" />
             </div>
           )}
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="hidden md:flex p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer mx-auto"
-            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {isCollapsed ? (
-              <PanelLeft className="w-4 h-4" />
-            ) : (
-              <PanelLeftClose className="w-4 h-4" />
-            )}
-          </button>
         </div>
       </aside>
     </>

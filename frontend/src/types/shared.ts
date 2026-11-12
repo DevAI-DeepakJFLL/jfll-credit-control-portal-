@@ -1,4 +1,4 @@
-export type CRMAutomationId = 'credit-appraisal' | 'ageing-report' | 'dunning-exposure';
+export type CRMAutomationId = 'credit-appraisal' | 'ageing-report';
 
 export interface CRMAutomationTab {
   id: CRMAutomationId;
@@ -6,6 +6,6 @@ export interface CRMAutomationTab {
   shortLabel: string;
   description: string;
   badge?: string;
-  iconName: 'ShieldCheck' | 'CalendarClock' | 'BellRing' | 'FileSpreadsheet';
+  iconName: 'ShieldCheck' | 'CalendarClock' | 'FileSpreadsheet';
   isAvailable: boolean;
 }

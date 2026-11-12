@@ -172,6 +172,33 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
   const [customerVouchers, setCustomerVouchers] = useState<Record<string, DebtorVoucher[]>>({});
   const [loadingVouchers, setLoadingVouchers] = useState<boolean>(false);
 
+  // Dynamically compute unique branches & FU persons from batch summary and loaded customers
+  const availableBranches = React.useMemo(() => {
+    const set = new Set<string>();
+    if (summary?.branch_distribution) {
+      summary.branch_distribution.forEach((b) => {
+        if (b.branch && b.branch.trim()) set.add(b.branch.trim());
+      });
+    }
+    customers.forEach((c) => {
+      if (c.branch && c.branch.trim()) set.add(c.branch.trim());
+    });
+    return Array.from(set).sort();
+  }, [summary?.branch_distribution, customers]);
+
+  const availableFUPersons = React.useMemo(() => {
+    const set = new Set<string>();
+    if (summary?.fu_distribution) {
+      summary.fu_distribution.forEach((fu) => {
+        if (fu.fu_person && fu.fu_person.trim()) set.add(fu.fu_person.trim());
+      });
+    }
+    customers.forEach((c) => {
+      if (c.fu_person && c.fu_person.trim()) set.add(c.fu_person.trim());
+    });
+    return Array.from(set).sort();
+  }, [summary?.fu_distribution, customers]);
+
   // 300ms Search Debounce to prevent network stampedes and race conditions
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -821,14 +848,11 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                     className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-800 bg-white shadow-2xs focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">All Branches</option>
-                    <option value="Mumbai">Mumbai</option>
-                    <option value="Delhi">Delhi</option>
-                    <option value="Banglore">Banglore</option>
-                    <option value="Kerala">Kerala</option>
-                    <option value="Ahmedabad">Ahmedabad</option>
-                    <option value="Chennai">Chennai</option>
-                    <option value="Hyderabad">Hyderabad</option>
-                    <option value="Kolkata">Kolkata</option>
+                    {availableBranches.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
+                      </option>
+                    ))}
                   </select>
 
                   <select
@@ -841,10 +865,11 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                     className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-800 bg-white shadow-2xs focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">All Follow-Up Persons</option>
-                    <option value="Nikita">Nikita</option>
-                    <option value="Vaibhav">Vaibhav</option>
-                    <option value="Siddhesh">Siddhesh</option>
-                    <option value="Other">Other</option>
+                    {availableFUPersons.map((person) => (
+                      <option key={person} value={person}>
+                        {person}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -987,19 +1012,18 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                                   style={{ colorScheme: 'light' }}
                                   className="px-2 py-1 rounded border border-blue-400 text-xs bg-white text-slate-800"
                                 >
-                                  <option value="Nikita">Nikita</option>
-                                  <option value="Vaibhav">Vaibhav</option>
-                                  <option value="Siddhesh">Siddhesh</option>
-                                  <option value="Other">Other</option>
+                                  {editFUPerson && !availableFUPersons.includes(editFUPerson) && (
+                                    <option value={editFUPerson}>{editFUPerson}</option>
+                                  )}
+                                  {availableFUPersons.map((person) => (
+                                    <option key={person} value={person}>
+                                      {person}
+                                    </option>
+                                  ))}
                                 </select>
                               ) : (
-                                <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap ${
-                                  row.fu_person === 'Nikita' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                                  row.fu_person === 'Vaibhav' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                                  row.fu_person === 'Siddhesh' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                  'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {row.fu_person}
+                                <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap bg-slate-100 text-slate-700 border border-slate-200">
+                                  {row.fu_person || 'Unassigned'}
                                 </span>
                               )}
                             </td>

@@ -1,6 +1,6 @@
 """
 Centralized Data Normalization & Formatting Utilities.
-Shared across all Credit Control CRM automations (Credit Appraisal, Ageing Reports, Dunning).
+Shared across active Credit Control CRM automations (Credit Appraisal, Ageing Reports).
 """
 import re
 from datetime import datetime, date
