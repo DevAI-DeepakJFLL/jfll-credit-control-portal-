@@ -7,8 +7,18 @@ import { RubixExtractedData } from './types';
 import { apiUrl, parseJsonResponse } from '../../config/api';
 import { CheckCircle2, X, AlertCircle, FileText, History, PlusCircle } from 'lucide-react';
 
-export const CreditAppraisalView: React.FC = () => {
-  const [subTab, setSubTab] = useState<'create' | 'history'>('create');
+interface CreditAppraisalViewProps {
+  subTab?: 'create' | 'history';
+  setSubTab?: (tab: 'create' | 'history') => void;
+}
+
+export const CreditAppraisalView: React.FC<CreditAppraisalViewProps> = ({
+  subTab: externalSubTab,
+  setSubTab: externalSetSubTab
+}) => {
+  const [internalSubTab, setInternalSubTab] = useState<'create' | 'history'>('create');
+  const subTab = externalSubTab ?? internalSubTab;
+  const setSubTab = externalSetSubTab ?? setInternalSubTab;
   const [extractedData, setExtractedData] = useState<RubixExtractedData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);

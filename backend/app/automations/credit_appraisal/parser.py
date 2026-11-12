@@ -3,6 +3,14 @@ import pypdf
 from datetime import date
 from typing import Dict, Any, List
 
+from backend.app.core.parsers import (
+    clean_text,
+    normalize_date as _normalize_date,
+    format_inr as _format_inr,
+    extract_pdf_pages_text
+)
+from backend.app.core.parsers.common import MONTHS_MAP as _MONTHS
+
 # Precompiled regular expressions for high-frequency extraction routines
 RE_WHITESPACE = re.compile(r'[ \t]+')
 RE_INR = re.compile(r'(\d)(?=(\d{2})+$)')
@@ -10,34 +18,6 @@ RE_EPFO = re.compile(r'\d{10,15}\s+(\d{1,2}-[A-Za-z]{3}-\d{2,4})\s+[\d\.]+\s+([A
 RE_COURT_VS = re.compile(r'vs\s*\.\s*([A-Z0-9\s,\.\(\)&-]+?)\s+(?:Pending|Active)', re.IGNORECASE)
 RE_COURT_PENDING = re.compile(r'\b(?:Pending|Active)\b', re.IGNORECASE)
 RE_COURT_LEGAL_HISTORY = re.compile(r'LEGAL HISTORY\s*(.*?)(?:ANNEXURE|END OF REPORT|\Z)', re.DOTALL)
-
-def clean_text(text: str) -> str:
-    if not text:
-        return ""
-    # Normalize unicode non-breaking spaces and hyphen variants
-    text = text.replace('\xa0', ' ').replace('\u2010', '-').replace('\u2013', '-').replace('\u2014', '-').replace('‐', '-')
-    text = RE_WHITESPACE.sub(' ', text)
-    return text.strip()
-
-_MONTHS = {'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
-           'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'}
-
-def _normalize_date(raw_date: str) -> str:
-    """Converts DD-Mon-YYYY (e.g. 01-Jan-2019) to DD-MM-YYYY (01-01-2019)."""
-    raw_date = raw_date.replace('\u2010', '-').replace('‐', '-')
-    parts = raw_date.strip().split('-')
-    if len(parts) == 3 and parts[1].lower() in _MONTHS:
-        return f"{parts[0]}-{_MONTHS[parts[1].lower()]}-{parts[2]}"
-    return raw_date.strip()
-
-def _format_inr(amount: int) -> str:
-    """Formats an integer rupee amount into the Indian numbering system (e.g. ₹ 10,00,000)."""
-    s = str(amount)
-    if len(s) <= 3:
-        return f"₹ {s}"
-    head, tail = s[:-3], s[-3:]
-    head = RE_INR.sub(r'\1,', head)
-    return f"₹ {head},{tail}"
 
 def _generate_kyc_checklist(type_of_company: str, gst_delay_days: int = 0, bureau: str = "Rubix") -> List[Dict[str, str]]:
     is_pvt_ltd = 'private limited' in type_of_company.lower()

@@ -24,6 +24,7 @@ from backend.app.database import (
     get_appraisals_count
 )
 from backend.app.s3_storage import upload_memo_to_s3, download_memo_from_s3, is_s3_enabled
+from backend.app.automations.ageing_report.routes import router as ageing_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("credit_crm")
@@ -192,6 +193,9 @@ if not is_lambda:
 
 # GZip Compression for payloads over 1KB
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Register Automation Routers
+app.include_router(ageing_router, prefix="/api/ageing", tags=["Ageing Report"])
 
 MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB max
 PDF_MAGIC_BYTES = b"%PDF-"

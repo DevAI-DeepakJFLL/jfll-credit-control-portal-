@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   CalendarClock, 
   UploadCloud, 
@@ -11,35 +11,319 @@ import {
   Building2, 
   Users, 
   RefreshCw, 
-  Clock 
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  Edit2,
+  Check,
+  X,
+  FileText
 } from 'lucide-react';
+import { apiUrl, parseJsonResponse } from '../../config/api';
 
-export const AgeingReportView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'customers'>('upload');
+interface AgeingReportViewProps {
+  activeTab?: 'upload' | 'dashboard' | 'customers';
+  setActiveTab?: (tab: 'upload' | 'dashboard' | 'customers') => void;
+}
+
+interface BucketMetric {
+  label: string;
+  amount: number;
+  percentage: number;
+  formatted_amount: string;
+}
+
+interface BranchMetric {
+  branch: string;
+  outstanding: number;
+  overdue: number;
+  customer_count: number;
+  share_pct: number;
+  formatted_outstanding: string;
+  formatted_overdue: string;
+}
+
+interface FUPersonMetric {
+  fu_person: string;
+  outstanding: number;
+  received: number;
+  balance: number;
+  customer_count: number;
+  share_pct: number;
+  formatted_outstanding: string;
+  formatted_balance: string;
+}
+
+interface AgeingBatchSummary {
+  batch_uuid: string;
+  filename: string;
+  posting_cutoff_date?: string;
+  total_receivable: number;
+  total_overdue: number;
+  this_iata: number;
+  last_iata: number;
+  critical_365: number;
+  customer_count: number;
+  invoice_count: number;
+  formatted_total_receivable: string;
+  formatted_total_overdue: string;
+  formatted_this_iata: string;
+  formatted_last_iata: string;
+  formatted_critical_365: string;
+  bucket_distribution: BucketMetric[];
+  branch_distribution: BranchMetric[];
+  fu_distribution: FUPersonMetric[];
+  created_at?: string;
+}
+
+interface CustomerAgeingRecord {
+  id: number;
+  batch_uuid: string;
+  customer_name: string;
+  fu_person: string;
+  sales_person: string;
+  branch: string;
+  payment_terms: string;
+  outstanding: number;
+  received: number;
+  balance: number;
+  advance: number;
+  remark: string;
+  bucket_0_30: number;
+  bucket_31_45: number;
+  bucket_46_60: number;
+  bucket_61_90: number;
+  bucket_91_180: number;
+  bucket_181_240: number;
+  bucket_241_365: number;
+  bucket_above_365: number;
+  grand_total: number;
+  this_iata: number;
+  last_iata: number;
+  on_ac: number;
+}
+
+interface BatchListItem {
+  id: number;
+  batch_uuid: string;
+  filename: string;
+  posting_cutoff_date?: string;
+  total_receivable: number;
+  total_overdue: number;
+  customer_count: number;
+  invoice_count: number;
+  created_at: string;
+}
+
+export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
+  activeTab: externalActiveTab,
+  setActiveTab: externalSetActiveTab
+}) => {
+  const [internalActiveTab, setInternalActiveTab] = useState<'upload' | 'dashboard' | 'customers'>('upload');
+  const activeTab = externalActiveTab ?? internalActiveTab;
+  const setActiveTab = externalSetActiveTab ?? setInternalActiveTab;
+
+  // Batch and metadata states
+  const [batches, setBatches] = useState<BatchListItem[]>([]);
+  const [selectedBatchUuid, setSelectedBatchUuid] = useState<string>('');
+  const [summary, setSummary] = useState<AgeingBatchSummary | null>(null);
+
+  // Debtor table states
+  const [customers, setCustomers] = useState<CustomerAgeingRecord[]>([]);
+  const [totalCustomers, setTotalCustomers] = useState<number>(0);
+  const [page, setPage] = useState<number>(1);
+  const [pageSize] = useState<number>(25);
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedFUPerson, setSelectedFUPerson] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [, setHasData] = useState<boolean>(false);
 
-  // Sample initial metrics for preview
-  const sampleMetrics = {
-    totalOutstanding: '₹ 14.82 Cr',
-    totalOverdue: '₹ 8.45 Cr',
-    thisIATA: '₹ 3.12 Cr',
-    lastIATA: '₹ 1.84 Cr',
-    critical365: '₹ 94.20 Lacs',
-    totalCustomers: 432
-  };
+  // UI status states
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [, setIsLoadingSummary] = useState<boolean>(false);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSimulateUpload = () => {
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setHasData(true);
+  // Inline editing state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editFUPerson, setEditFUPerson] = useState<string>('');
+  const [editRemark, setEditRemark] = useState<string>('');
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 1. Fetch available batches on mount
+  const fetchBatches = useCallback(async () => {
+    try {
+      const res = await fetch(apiUrl('/api/ageing/batches'));
+      if (res.ok) {
+        const data: BatchListItem[] = await parseJsonResponse(res);
+        setBatches(data);
+        if (data.length > 0 && !selectedBatchUuid) {
+          setSelectedBatchUuid(data[0].batch_uuid);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch ageing batches:', err);
+    }
+  }, [selectedBatchUuid]);
+
+  useEffect(() => {
+    fetchBatches();
+  }, [fetchBatches]);
+
+  // 2. Load summary when batch changes
+  const loadBatchSummary = useCallback(async (batchUuid: string) => {
+    if (!batchUuid) return;
+    setIsLoadingSummary(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(apiUrl(`/api/ageing/summary/${batchUuid}`));
+      if (res.ok) {
+        const data: AgeingBatchSummary = await parseJsonResponse(res);
+        setSummary(data);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setErrorMessage(errData.detail || 'Failed to load batch summary.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Error connecting to backend.');
+    } finally {
+      setIsLoadingSummary(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedBatchUuid) {
+      loadBatchSummary(selectedBatchUuid);
+    }
+  }, [selectedBatchUuid, loadBatchSummary]);
+
+  // 3. Load customer table records
+  const loadCustomers = useCallback(async () => {
+    if (!selectedBatchUuid) return;
+    setIsLoadingCustomers(true);
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        page_size: pageSize.toString()
+      });
+      if (selectedBranch && selectedBranch !== 'all') {
+        params.append('branch', selectedBranch);
+      }
+      if (selectedFUPerson && selectedFUPerson !== 'all') {
+        params.append('fu_person', selectedFUPerson);
+      }
+      if (searchQuery.trim()) {
+        params.append('search', searchQuery.trim());
+      }
+
+      const res = await fetch(apiUrl(`/api/ageing/customers/${selectedBatchUuid}?${params.toString()}`));
+      if (res.ok) {
+        const data = await parseJsonResponse(res);
+        setCustomers(data.customers || []);
+        setTotalCustomers(data.total || 0);
+      }
+    } catch (err: any) {
+      console.error('Error fetching customer records:', err);
+    } finally {
+      setIsLoadingCustomers(false);
+    }
+  }, [selectedBatchUuid, page, pageSize, selectedBranch, selectedFUPerson, searchQuery]);
+
+  useEffect(() => {
+    if (selectedBatchUuid) {
+      loadCustomers();
+    }
+  }, [selectedBatchUuid, loadCustomers]);
+
+  // 4. File upload handler
+  const handleFileUpload = async (file: File) => {
+    if (!file) return;
+    setIsUploading(true);
+    setErrorMessage(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(apiUrl('/api/ageing/upload'), {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Upload failed with HTTP ${res.status}`);
+      }
+
+      const data = await parseJsonResponse(res);
+      const newBatchUuid = data.batch_uuid;
+      setSelectedBatchUuid(newBatchUuid);
+      setSummary(data.summary);
+      await fetchBatches();
       setActiveTab('dashboard');
-    }, 1200);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Upload processing failed.');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  // 5. Customer follow-up update handler
+  const handleStartEdit = (record: CustomerAgeingRecord) => {
+    setEditingId(record.id);
+    setEditFUPerson(record.fu_person);
+    setEditRemark(record.remark || '');
+  };
+
+  const handleSaveEdit = async (customerId: number) => {
+    setIsSavingEdit(true);
+    try {
+      const res = await fetch(apiUrl(`/api/ageing/customer/${customerId}`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fu_person: editFUPerson,
+          remark: editRemark
+        })
+      });
+
+      if (res.ok) {
+        setCustomers((prev) =>
+          prev.map((c) =>
+            c.id === customerId ? { ...c, fu_person: editFUPerson, remark: editRemark } : c
+          )
+        );
+        setEditingId(null);
+        // Refresh summary to reflect updated FU allocations
+        if (selectedBatchUuid) {
+          loadBatchSummary(selectedBatchUuid);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to update debtor record:', err);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // 6. Excel download trigger
+  const handleDownloadExcel = () => {
+    if (!selectedBatchUuid) return;
+    window.open(apiUrl(`/api/ageing/export/${selectedBatchUuid}`), '_blank');
+  };
+
+  const totalPages = Math.max(1, Math.ceil(totalCustomers / pageSize));
 
   return (
     <div className="w-full">
@@ -54,14 +338,36 @@ export const AgeingReportView: React.FC = () => {
               <div className="flex items-center space-x-2">
                 <h2 className="text-sm font-bold text-slate-900 tracking-tight">Accounts Receivable Ageing Automation</h2>
                 <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-                  ERP AR Pipeline
+                  ERP AR Engine
                 </span>
+                {summary?.posting_cutoff_date && (
+                  <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                    Cutoff: {summary.posting_cutoff_date}
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-500">Master AR transaction aggregation, dynamic age bucketing, follow-up mapping & automated Excel compilation</p>
+              <p className="text-xs text-slate-500">Master AR ledger parsing, dynamic age bucketing, follow-up mapping & automated Excel compilation</p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
+            {batches.length > 0 && (
+              <select
+                value={selectedBatchUuid}
+                onChange={(e) => {
+                  setSelectedBatchUuid(e.target.value);
+                  setPage(1);
+                }}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 bg-white shadow-2xs hover:border-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              >
+                {batches.map((b) => (
+                  <option key={b.batch_uuid} value={b.batch_uuid}>
+                    {b.filename} ({b.posting_cutoff_date || 'Current'})
+                  </option>
+                ))}
+              </select>
+            )}
+
             <button
               onClick={() => setActiveTab('upload')}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition ${
@@ -101,6 +407,21 @@ export const AgeingReportView: React.FC = () => {
         </div>
       </div>
 
+      {/* Global Error Banner */}
+      {errorMessage && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+            <button onClick={() => setErrorMessage(null)} className="text-rose-500 hover:text-rose-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Workspace Body */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* KPI Metric Summary Row */}
@@ -110,17 +431,27 @@ export const AgeingReportView: React.FC = () => {
               <span className="text-xs font-medium">Total Receivables</span>
               <Building2 className="w-4 h-4 text-slate-400" />
             </div>
-            <div className="text-xl font-bold text-slate-900">{sampleMetrics.totalOutstanding}</div>
-            <p className="text-[11px] text-slate-400 mt-1">432 Active Debtors</p>
+            <div className="text-xl font-bold text-slate-900">
+              {summary ? summary.formatted_total_receivable : '₹ 0'}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {summary ? `${summary.customer_count} Active Debtors` : 'Awaiting upload'}
+            </p>
           </div>
 
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
             <div className="flex items-center justify-between text-slate-500 mb-1">
-              <span className="text-xs font-medium">Overdue Exposure</span>
+              <span className="text-xs font-medium">Overdue Exposure (&gt;30d)</span>
               <AlertTriangle className="w-4 h-4 text-amber-500" />
             </div>
-            <div className="text-xl font-bold text-amber-700">{sampleMetrics.totalOverdue}</div>
-            <p className="text-[11px] text-amber-600/80 mt-1">57.1% of Total Ledger</p>
+            <div className="text-xl font-bold text-amber-700">
+              {summary ? summary.formatted_total_overdue : '₹ 0'}
+            </div>
+            <p className="text-[11px] text-amber-600/80 mt-1">
+              {summary && summary.total_receivable > 0
+                ? `${((summary.total_overdue / summary.total_receivable) * 100).toFixed(1)}% of Total Ledger`
+                : 'Overdue balance'}
+            </p>
           </div>
 
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -128,8 +459,10 @@ export const AgeingReportView: React.FC = () => {
               <span className="text-xs font-medium">This IATA Cycle (31-45d)</span>
               <Clock className="w-4 h-4 text-blue-500" />
             </div>
-            <div className="text-xl font-bold text-blue-700">{sampleMetrics.thisIATA}</div>
-            <p className="text-[11px] text-blue-600/80 mt-1">Immediate Settlement Focus</p>
+            <div className="text-xl font-bold text-blue-700">
+              {summary ? summary.formatted_this_iata : '₹ 0'}
+            </div>
+            <p className="text-[11px] text-blue-600/80 mt-1">Current Billing Cycle</p>
           </div>
 
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -137,7 +470,9 @@ export const AgeingReportView: React.FC = () => {
               <span className="text-xs font-medium">Last IATA (46-60d)</span>
               <Clock className="w-4 h-4 text-indigo-500" />
             </div>
-            <div className="text-xl font-bold text-indigo-700">{sampleMetrics.lastIATA}</div>
+            <div className="text-xl font-bold text-indigo-700">
+              {summary ? summary.formatted_last_iata : '₹ 0'}
+            </div>
             <p className="text-[11px] text-indigo-600/80 mt-1">Follow-Up Escalation</p>
           </div>
 
@@ -146,8 +481,10 @@ export const AgeingReportView: React.FC = () => {
               <span className="text-xs font-medium">Critical (&gt;365 Days)</span>
               <AlertTriangle className="w-4 h-4 text-rose-600" />
             </div>
-            <div className="text-xl font-bold text-rose-700">{sampleMetrics.critical365}</div>
-            <p className="text-[11px] text-rose-600/80 mt-1">Legal / Bad Debt Review</p>
+            <div className="text-xl font-bold text-rose-700">
+              {summary ? summary.formatted_critical_365 : '₹ 0'}
+            </div>
+            <p className="text-[11px] text-rose-600/80 mt-1">Legal / Bad Debt Watch</p>
           </div>
         </div>
 
@@ -160,20 +497,37 @@ export const AgeingReportView: React.FC = () => {
               </div>
               <h3 className="text-lg font-bold text-slate-900 tracking-tight">Upload Master Accounts Receivable Dump</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                Upload your raw ERP Accounts Receivable transaction export (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">MASTER FILE - Copy.xlsx</code>). The engine will parse transaction rows, compute aging buckets, map follow-up personnel, and generate executive summaries with zero formula errors.
+                Upload your ERP Accounts Receivable export (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">MASTER FILE - Copy.xlsx</code>). The engine automatically parses vouchers, aggregates age buckets, assigns Follow-Up Specialists, and compiles the executive Excel report with live formulas.
               </p>
             </div>
 
-            <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-blue-500 hover:bg-blue-50/20 transition cursor-pointer">
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-blue-500 hover:bg-blue-50/20 transition cursor-pointer"
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xlsm"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleFileUpload(e.target.files[0]);
+                  }
+                }}
+              />
               <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto mb-3" />
               <p className="text-sm font-semibold text-slate-700">Drag & drop your Master AR Excel file here</p>
-              <p className="text-xs text-slate-400 mt-1">Supports .xlsx and .xlsm formats (Posting Date / Due Date analysis)</p>
+              <p className="text-xs text-slate-400 mt-1">Supports .xlsx and .xlsm formats (ERP Ledger Dump)</p>
+              
               <button
-                onClick={handleSimulateUpload}
-                disabled={isProcessing}
+                type="button"
+                disabled={isUploading}
                 className="mt-5 inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50"
               >
-                {isProcessing ? (
+                {isUploading ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
                     <span>Processing Transactions...</span>
@@ -197,6 +551,41 @@ export const AgeingReportView: React.FC = () => {
                 <span>Follow-Up & Sales Person Mapping</span>
               </div>
             </div>
+
+            {/* Previous Batches List */}
+            {batches.length > 0 && (
+              <div className="mt-8 pt-6 border-t border-slate-200">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Recently Processed Reports</h4>
+                <div className="space-y-2">
+                  {batches.slice(0, 5).map((b) => (
+                    <div
+                      key={b.batch_uuid}
+                      onClick={() => {
+                        setSelectedBatchUuid(b.batch_uuid);
+                        setActiveTab('dashboard');
+                      }}
+                      className="p-3 rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-slate-50 flex items-center justify-between transition cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <FileText className="w-4 h-4 text-blue-600" />
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">{b.filename}</p>
+                          <p className="text-[11px] text-slate-400">
+                            {b.customer_count} debtors • {b.invoice_count} vouchers • Cutoff: {b.posting_cutoff_date || 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs font-bold text-slate-900">
+                          ₹ {(b.total_receivable / 10000000).toFixed(2)} Cr
+                        </span>
+                        <p className="text-[10px] text-slate-400">{b.created_at.slice(0, 10)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -206,12 +595,16 @@ export const AgeingReportView: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">Ageing Bucket Breakdown</h3>
-                <p className="text-xs text-slate-500">Accounts Receivable distributed across credit payment tenors</p>
+                <p className="text-xs text-slate-500">
+                  Accounts Receivable distributed across credit payment tenors ({summary?.customer_count || 0} active debtors)
+                </p>
               </div>
 
               <div className="flex items-center space-x-3">
                 <button
-                  className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+                  onClick={handleDownloadExcel}
+                  disabled={!selectedBatchUuid}
+                  className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />
                   <span>Download Final Ageing Excel (.xlsx)</span>
@@ -219,51 +612,86 @@ export const AgeingReportView: React.FC = () => {
               </div>
             </div>
 
-            {/* Bucket Cards Visualization */}
+            {/* 8-Bucket Cards Visualization */}
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-              {[
-                { label: '0-30 Days', amt: '₹ 6.37 Cr', pct: '43.0%', color: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
-                { label: '31-45 Days', amt: '₹ 3.12 Cr', pct: '21.1%', color: 'bg-blue-50 border-blue-200 text-blue-800' },
-                { label: '46-60 Days', amt: '₹ 1.84 Cr', pct: '12.4%', color: 'bg-indigo-50 border-indigo-200 text-indigo-800' },
-                { label: '61-90 Days', amt: '₹ 1.15 Cr', pct: '7.8%', color: 'bg-amber-50 border-amber-200 text-amber-800' },
-                { label: '91-180 Days', amt: '₹ 88.5 L', pct: '6.0%', color: 'bg-orange-50 border-orange-200 text-orange-800' },
-                { label: '181-240 Days', amt: '₹ 32.1 L', pct: '2.2%', color: 'bg-rose-50 border-rose-200 text-rose-800' },
-                { label: '241-365 Days', amt: '₹ 19.4 L', pct: '1.3%', color: 'bg-rose-100 border-rose-300 text-rose-900' },
-                { label: '> 365 Days', amt: '₹ 94.2 L', pct: '6.4%', color: 'bg-red-100 border-red-300 text-red-950 font-bold' }
-              ].map((b, idx) => (
-                <div key={idx} className={`p-3 rounded-xl border ${b.color} flex flex-col justify-between`}>
-                  <span className="text-[11px] font-semibold">{b.label}</span>
-                  <div className="my-2">
-                    <span className="text-sm font-bold block">{b.amt}</span>
-                    <span className="text-[10px] opacity-75">{b.pct} share</span>
+              {(summary?.bucket_distribution || [
+                { label: '0-30 Days', formatted_amount: '₹ 0', percentage: 0 },
+                { label: '31-45 Days', formatted_amount: '₹ 0', percentage: 0 },
+                { label: '46-60 Days', formatted_amount: '₹ 0', percentage: 0 },
+                { label: '61-90 Days', formatted_amount: '₹ 0', percentage: 0 },
+                { label: '91-180 Days', formatted_amount: '₹ 0', percentage: 0 },
+                { label: '181-240 Days', formatted_amount: '₹ 0', percentage: 0 },
+                { label: '241-365 Days', formatted_amount: '₹ 0', percentage: 0 },
+                { label: '> 365 Days', formatted_amount: '₹ 0', percentage: 0 }
+              ]).map((b, idx) => {
+                const colorMap = [
+                  'bg-emerald-50 border-emerald-200 text-emerald-800',
+                  'bg-blue-50 border-blue-200 text-blue-800',
+                  'bg-indigo-50 border-indigo-200 text-indigo-800',
+                  'bg-amber-50 border-amber-200 text-amber-800',
+                  'bg-orange-50 border-orange-200 text-orange-800',
+                  'bg-rose-50 border-rose-200 text-rose-800',
+                  'bg-rose-100 border-rose-300 text-rose-900',
+                  'bg-red-100 border-red-300 text-red-950 font-bold'
+                ];
+                const cardColor = colorMap[idx] || colorMap[0];
+                return (
+                  <div key={idx} className={`p-3 rounded-xl border ${cardColor} flex flex-col justify-between`}>
+                    <span className="text-[11px] font-semibold">{b.label}</span>
+                    <div className="my-2">
+                      <span className="text-sm font-bold block">{b.formatted_amount}</span>
+                      <span className="text-[10px] opacity-75">{b.percentage}% share</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Branch-wise Distribution Overview */}
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Branch Ledger Exposure</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { branch: 'Mumbai Hub', outstanding: '₹ 9.15 Cr', overdue: '₹ 4.82 Cr', share: '61.7%' },
-                  { branch: 'Delhi (DEL)', outstanding: '₹ 3.42 Cr', overdue: '₹ 2.15 Cr', share: '23.1%' },
-                  { branch: 'Ahmedabad (AMD)', outstanding: '₹ 1.25 Cr', overdue: '₹ 88.2 L', share: '8.4%' },
-                  { branch: 'Kerala & South', outstanding: '₹ 62.4 L', overdue: '₹ 38.1 L', share: '4.2%' },
-                  { branch: 'Bangalore (BLR)', outstanding: '₹ 24.1 L', overdue: '₹ 14.5 L', share: '1.6%' },
-                  { branch: 'Other Seaports', outstanding: '₹ 14.0 L', overdue: '₹ 7.2 L', share: '1.0%' }
-                ].map((item, idx) => (
-                  <div key={idx} className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-bold text-slate-800">{item.branch}</p>
-                      <p className="text-[11px] text-slate-500">Overdue: {item.overdue}</p>
+            {/* Distribution Grid: Branch Exposure + FU Specialists */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Branch Ledger Exposure */}
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Branch Ledger Exposure</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(summary?.branch_distribution || []).map((item, idx) => (
+                    <div key={idx} className="p-3 rounded-lg border border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">{item.branch}</p>
+                        <p className="text-[11px] text-slate-500">Overdue: {item.formatted_overdue}</p>
+                        <p className="text-[10px] text-slate-400">{item.customer_count} debtors</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-bold text-blue-700">{item.formatted_outstanding}</p>
+                        <span className="text-[10px] text-slate-500 font-medium">{item.share_pct}% share</span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-blue-700">{item.outstanding}</p>
-                      <span className="text-[10px] text-slate-400">{item.share}</span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Follow-Up Specialist Workload */}
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Follow-Up Specialist Workload</h4>
+                <div className="space-y-3">
+                  {(summary?.fu_distribution || []).map((fu, idx) => (
+                    <div key={idx} className="p-3 rounded-lg border border-slate-100 bg-slate-50/50">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-bold text-slate-800">{fu.fu_person}</span>
+                        <span className="font-bold text-slate-900">{fu.formatted_outstanding} ({fu.customer_count} debtors)</span>
+                      </div>
+                      <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, fu.share_pct)}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                        <span>{fu.share_pct}% of total overdue exposure</span>
+                        <span>Balance: {fu.formatted_balance}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -280,45 +708,65 @@ export const AgeingReportView: React.FC = () => {
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by customer name, voucher or representative..."
-                    className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-white focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Search debtor name, sales rep, or remark..."
+                    className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 <div className="flex items-center space-x-2">
                   <select
                     value={selectedBranch}
-                    onChange={(e) => setSelectedBranch(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-700 bg-white"
+                    onChange={(e) => {
+                      setSelectedBranch(e.target.value);
+                      setPage(1);
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-700 bg-white shadow-2xs"
                   >
                     <option value="all">All Branches</option>
                     <option value="Mumbai">Mumbai</option>
                     <option value="Delhi">Delhi</option>
-                    <option value="Ahmedabad">Ahmedabad</option>
+                    <option value="Banglore">Banglore</option>
                     <option value="Kerala">Kerala</option>
+                    <option value="Ahmedabad">Ahmedabad</option>
+                    <option value="Chennai">Chennai</option>
+                    <option value="Hyderabad">Hyderabad</option>
+                    <option value="Kolkata">Kolkata</option>
                   </select>
 
                   <select
                     value={selectedFUPerson}
-                    onChange={(e) => setSelectedFUPerson(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-700 bg-white"
+                    onChange={(e) => {
+                      setSelectedFUPerson(e.target.value);
+                      setPage(1);
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-700 bg-white shadow-2xs"
                   >
                     <option value="all">All Follow-Up Persons</option>
-                    <option value="Siddhesh">Siddhesh</option>
                     <option value="Nikita">Nikita</option>
                     <option value="Vaibhav">Vaibhav</option>
+                    <option value="Siddhesh">Siddhesh</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
               </div>
 
-              <button
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export Filtered Table</span>
-              </button>
+              <div className="flex items-center space-x-3">
+                <span className="text-xs text-slate-500">
+                  Showing {customers.length} of {totalCustomers} debtors
+                </span>
+                <button
+                  onClick={handleDownloadExcel}
+                  disabled={!selectedBatchUuid}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Excel</span>
+                </button>
+              </div>
             </div>
 
             {/* Table */}
@@ -334,32 +782,152 @@ export const AgeingReportView: React.FC = () => {
                     <th className="py-2.5 px-3 text-right">This IATA</th>
                     <th className="py-2.5 px-3 text-right">Last IATA</th>
                     <th className="py-2.5 px-3 text-right">&gt; 90 Days</th>
+                    <th className="py-2.5 px-3 text-right">Grand Total</th>
                     <th className="py-2.5 px-3">Remark</th>
+                    <th className="py-2.5 px-3 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {[
-                    { fu: 'Other', customer: 'A ENTERPRISES HOLDING INC.', branch: 'Mumbai', sales: 'Sweety Soni', out: '₹ 10.49 Cr', thisIata: '₹ 0', lastIata: '₹ 0', above90: '₹ 10.49 Cr', remark: 'As per confirm 25 Lacs' },
-                    { fu: 'Siddhesh', customer: 'FAIR EXPORTS (I) PVT LTD.', branch: 'Mumbai', sales: 'Irfan Shaikh', out: '₹ 1.15 Cr', thisIata: '₹ 82.4 L', lastIata: '₹ 32.1 L', above90: '₹ 0', remark: 'Payment scheduled this week' },
-                    { fu: 'Siddhesh', customer: 'DHARAMPAL SATYAPAL LIMITED', branch: 'Mumbai', sales: 'Irfan Shaikh', out: '₹ 1.02 Cr', thisIata: '₹ 54.0 L', lastIata: '₹ 47.8 L', above90: '₹ 0', remark: 'Regular paying client' },
-                    { fu: 'Nikita', customer: 'FLOMIC GLOBAL LOGISTICS LIMITED', branch: 'Mumbai', sales: 'Narendra Gupta', out: '₹ 83.1 L', thisIata: '₹ 45.2 L', lastIata: '₹ 22.0 L', above90: '₹ 15.9 L', remark: 'Cheque issued' },
-                    { fu: 'Vaibhav', customer: 'COMMITTED CARGO SOLUTIONS PVT LTD', branch: 'Delhi', sales: 'Rahul Vasawa', out: '₹ 74.1 L', thisIata: '₹ 38.0 L', lastIata: '₹ 20.1 L', above90: '₹ 16.0 L', remark: 'Follow up done on 11-Nov' }
-                  ].map((row, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition">
-                      <td className="py-2.5 px-3 font-semibold text-slate-800">{row.fu}</td>
-                      <td className="py-2.5 px-3 font-semibold text-slate-900">{row.customer}</td>
-                      <td className="py-2.5 px-3">{row.branch}</td>
-                      <td className="py-2.5 px-3">{row.sales}</td>
-                      <td className="py-2.5 px-3 text-right font-bold text-slate-900">{row.out}</td>
-                      <td className="py-2.5 px-3 text-right text-blue-700 font-semibold">{row.thisIata}</td>
-                      <td className="py-2.5 px-3 text-right text-indigo-700 font-semibold">{row.lastIata}</td>
-                      <td className="py-2.5 px-3 text-right text-rose-700 font-semibold">{row.above90}</td>
-                      <td className="py-2.5 px-3 text-slate-500 italic max-w-xs truncate">{row.remark}</td>
+                  {isLoadingCustomers ? (
+                    <tr>
+                      <td colSpan={11} className="py-8 text-center text-slate-400">
+                        <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-600" />
+                        <span>Loading debtors...</span>
+                      </td>
                     </tr>
-                  ))}
+                  ) : customers.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="py-8 text-center text-slate-400">
+                        No debtor records found matching the criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    customers.map((row) => {
+                      const isEditing = editingId === row.id;
+                      const above90 = row.bucket_91_180 + row.bucket_181_240 + row.bucket_241_365 + row.bucket_above_365;
+
+                      return (
+                        <tr key={row.id} className="hover:bg-slate-50 transition">
+                          <td className="py-2 px-3 font-semibold text-slate-800">
+                            {isEditing ? (
+                              <select
+                                value={editFUPerson}
+                                onChange={(e) => setEditFUPerson(e.target.value)}
+                                className="px-2 py-1 rounded border border-blue-400 text-xs bg-white"
+                              >
+                                <option value="Nikita">Nikita</option>
+                                <option value="Vaibhav">Vaibhav</option>
+                                <option value="Siddhesh">Siddhesh</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            ) : (
+                              <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
+                                row.fu_person === 'Nikita' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                                row.fu_person === 'Vaibhav' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                row.fu_person === 'Siddhesh' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>
+                                {row.fu_person}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 font-semibold text-slate-900 max-w-xs truncate" title={row.customer_name}>
+                            {row.customer_name}
+                          </td>
+                          <td className="py-2 px-3">{row.branch}</td>
+                          <td className="py-2 px-3 text-slate-600">{row.sales_person}</td>
+                          <td className="py-2 px-3 text-right font-bold text-slate-900">
+                            ₹ {row.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className="py-2 px-3 text-right text-blue-700 font-semibold">
+                            ₹ {row.this_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className="py-2 px-3 text-right text-indigo-700 font-semibold">
+                            ₹ {row.last_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className="py-2 px-3 text-right text-rose-700 font-semibold">
+                            ₹ {above90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className="py-2 px-3 text-right font-semibold text-slate-800">
+                            ₹ {row.grand_total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className="py-2 px-3 text-slate-500 italic max-w-xs">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editRemark}
+                                onChange={(e) => setEditRemark(e.target.value)}
+                                className="w-full px-2 py-1 rounded border border-blue-400 text-xs bg-white"
+                                placeholder="Add follow-up notes..."
+                              />
+                            ) : (
+                              <span className="truncate block" title={row.remark || 'No remark'}>
+                                {row.remark || '-'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-center">
+                            {isEditing ? (
+                              <div className="flex items-center justify-center space-x-1">
+                                <button
+                                  onClick={() => handleSaveEdit(row.id)}
+                                  disabled={isSavingEdit}
+                                  className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                                  title="Save Changes"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingId(null)}
+                                  className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 cursor-pointer"
+                                  title="Cancel"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleStartEdit(row)}
+                                className="p-1 text-slate-400 hover:text-blue-600 transition cursor-pointer"
+                                title="Edit Follow-up assignment or remark"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination controls */}
+            {totalPages > 1 && (
+              <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600">
+                <span>
+                  Page {page} of {totalPages} ({totalCustomers} total debtors)
+                </span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="px-2 font-medium">Page {page}</span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
