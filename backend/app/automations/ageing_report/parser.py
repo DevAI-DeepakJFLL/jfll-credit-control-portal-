@@ -78,7 +78,7 @@ def parse_master_ar_file(
     file_source: Union[str, bytes]
 ) -> Tuple[List[RawTransaction], Dict[str, Any]]:
     """
-    Parses an ERP Accounts Receivable Excel file (e.g. MASTER FILE - Copy.xlsx).
+    Parses an ERP Accounts Receivable Excel file (.xlsx / .xlsm).
     Scans for the header row dynamically, reads all transaction vouchers via fast row iterator,
     normalizes data fields, and returns (transactions, metadata).
     """

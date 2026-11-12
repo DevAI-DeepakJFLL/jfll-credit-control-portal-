@@ -617,7 +617,7 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
               </div>
               <h3 className="text-lg font-bold text-slate-900 tracking-tight">Upload Master Accounts Receivable Dump</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                Upload your ERP Accounts Receivable export (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">MASTER FILE - Copy.xlsx</code>). The engine automatically parses vouchers, aggregates age buckets, assigns Follow-Up Specialists, and compiles the executive Excel report with live formulas.
+                Upload your ERP Accounts Receivable export (.xlsx or .xlsm). The engine automatically parses vouchers, aggregates age buckets, assigns Follow-Up Specialists, and compiles the executive Excel report with live formulas.
               </p>
             </div>
 
