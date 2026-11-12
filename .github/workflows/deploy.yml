@@ -47,7 +47,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt httpx
 
-      - name: Run Backend Unit Test Suite (16/16)
+      - name: Run Backend Unit Test Suite (38/38)
         run: |
           python -m unittest discover backend/tests -v
 
