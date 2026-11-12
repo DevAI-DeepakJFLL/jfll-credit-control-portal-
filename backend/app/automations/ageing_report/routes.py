@@ -17,6 +17,7 @@ from backend.app.automations.ageing_report.service import (
     get_all_batches,
     get_batch_summary,
     get_batch_customers,
+    get_customer_vouchers,
     update_customer_followup,
     export_batch_excel
 )
@@ -71,11 +72,14 @@ def list_batch_customers(
     branch: Optional[str] = Query(None),
     fu_person: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    sort_by: str = Query("outstanding"),
+    sort_dir: str = Query("desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500)
 ):
     """
-    Returns paginated debtor records for a batch with branch, FU Person, and keyword filtering.
+    Returns paginated debtor records for a batch with branch, FU Person, keyword filtering,
+    and dynamic column sorting.
     """
     offset = (page - 1) * page_size
     customers, total_count = get_batch_customers(
@@ -83,6 +87,8 @@ def list_batch_customers(
         branch=branch,
         fu_person=fu_person,
         search=search,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=page_size,
         offset=offset
     )
@@ -92,6 +98,20 @@ def list_batch_customers(
         "total": total_count,
         "page": page,
         "page_size": page_size
+    }
+
+@router.get("/vouchers/{batch_uuid}")
+def list_customer_vouchers(batch_uuid: str, customer_name: str = Query(...)):
+    """
+    Returns invoice-level voucher breakdown (invoices, journal entries, payments)
+    for a specific debtor during active collection calls.
+    """
+    vouchers = get_customer_vouchers(batch_uuid, customer_name)
+    return {
+        "batch_uuid": batch_uuid,
+        "customer_name": customer_name,
+        "vouchers": vouchers,
+        "count": len(vouchers)
     }
 
 @router.patch("/customer/{customer_id}")
@@ -108,16 +128,34 @@ def update_debtor_followup(customer_id: int, request: UpdateCustomerRequest):
     return {"status": "success", "customer_id": customer_id}
 
 @router.get("/export/{batch_uuid}")
-def export_ageing_excel(batch_uuid: str, request: Request):
+def export_ageing_excel(
+    batch_uuid: str,
+    request: Request,
+    branch: Optional[str] = Query(None),
+    fu_person: Optional[str] = Query(None),
+    search: Optional[str] = Query(None)
+):
     """
     Generates and streams FINAL AGEING REPORT.xlsx with native Excel formulas and Sheet2 summary.
+    Supports branch-specific and filtered exports.
     """
-    check_rate_limit(request)
-    excel_stream = export_batch_excel(batch_uuid)
+    check_rate_limit(request, limit=60)
+    excel_stream = export_batch_excel(
+        batch_uuid,
+        branch=branch,
+        fu_person=fu_person,
+        search=search
+    )
     if not excel_stream:
         raise HTTPException(status_code=404, detail="Batch records not found for export.")
 
-    filename = f"FINAL_AGEING_REPORT_{batch_uuid[:8]}.xlsx"
+    suffix = ""
+    if branch and branch != "all":
+        suffix += f"_{branch}"
+    if fu_person and fu_person != "all":
+        suffix += f"_{fu_person}"
+    filename = f"FINAL_AGEING_REPORT_{batch_uuid[:8]}{suffix}.xlsx"
+
     return StreamingResponse(
         excel_stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

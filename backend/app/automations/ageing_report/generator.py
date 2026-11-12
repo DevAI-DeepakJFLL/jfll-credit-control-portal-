@@ -237,18 +237,27 @@ def generate_ageing_report_excel(
     ws_s2.cell(row=3, column=3, value=" Receive").font = font_bold
     ws_s2.cell(row=3, column=4, value=" Balance").font = font_bold
 
+    def fu_sort_key(name: str):
+        order = {"Nikita": 0, "Siddhesh": 1, "Vaibhav": 2}
+        if name in order:
+            return (0, order[name], name)
+        if name == "Other":
+            return (2, 0, name)
+        return (1, 0, name)
+
+    sorted_fu_names = sorted(fu_summary.keys(), key=fu_sort_key)
+
     cur_r = 4
-    for fu_name in ["Nikita", "Siddhesh", "Vaibhav", "Other"]:
-        if fu_name in fu_summary:
-            data = fu_summary[fu_name]
-            ws_s2.cell(row=cur_r, column=1, value=fu_name).font = font_bold
-            c1 = ws_s2.cell(row=cur_r, column=2, value=data["out"])
-            c2 = ws_s2.cell(row=cur_r, column=3, value=data["rec"])
-            c3 = ws_s2.cell(row=cur_r, column=4, value=data["bal"])
-            for cell in (c1, c2, c3):
-                cell.number_format = num_fmt_curr
-                cell.alignment = align_right
-            cur_r += 1
+    for fu_name in sorted_fu_names:
+        data = fu_summary[fu_name]
+        ws_s2.cell(row=cur_r, column=1, value=fu_name).font = font_bold
+        c1 = ws_s2.cell(row=cur_r, column=2, value=data["out"])
+        c2 = ws_s2.cell(row=cur_r, column=3, value=data["rec"])
+        c3 = ws_s2.cell(row=cur_r, column=4, value=data["bal"])
+        for cell in (c1, c2, c3):
+            cell.number_format = num_fmt_curr
+            cell.alignment = align_right
+        cur_r += 1
 
     # Grand Total row
     s1_gt_row = cur_r
@@ -271,41 +280,41 @@ def generate_ageing_report_excel(
     cur_r += 1
 
     fu_parent_rows = []
-    for fu_name in ["Nikita", "Siddhesh", "Vaibhav", "Other"]:
-        if fu_name in fu_branch_summary:
-            parent_r = cur_r
-            fu_parent_rows.append(parent_r)
-            ws_s2.cell(row=parent_r, column=1, value=fu_name).font = font_bold
-            cur_r += 1
+    sorted_branch_fu_names = sorted(fu_branch_summary.keys(), key=fu_sort_key)
+    for fu_name in sorted_branch_fu_names:
+        parent_r = cur_r
+        fu_parent_rows.append(parent_r)
+        ws_s2.cell(row=parent_r, column=1, value=fu_name).font = font_bold
+        cur_r += 1
 
-            branch_items = sorted(fu_branch_summary[fu_name].items())
-            branch_start_r = cur_r
-            for b_name, b_data in branch_items:
-                ws_s2.cell(row=cur_r, column=1, value=f"  {b_name}")
-                cb1 = ws_s2.cell(row=cur_r, column=2, value=b_data["out"])
-                cb2 = ws_s2.cell(row=cur_r, column=3, value=b_data["rec"])
-                cb3 = ws_s2.cell(row=cur_r, column=4, value=b_data["bal"])
-                for cell in (cb1, cb2, cb3):
-                    cell.number_format = num_fmt_curr
-                    cell.alignment = align_right
-                cur_r += 1
-            branch_end_r = cur_r - 1
-
-            # Dynamic formula for FU parent row in Section 2 summing its branch children
-            if branch_start_r <= branch_end_r:
-                c1 = ws_s2.cell(row=parent_r, column=2, value=f"=SUM(B{branch_start_r}:B{branch_end_r})")
-                c2 = ws_s2.cell(row=parent_r, column=3, value=f"=SUM(C{branch_start_r}:C{branch_end_r})")
-                c3 = ws_s2.cell(row=parent_r, column=4, value=f"=SUM(D{branch_start_r}:D{branch_end_r})")
-            else:
-                f_data = fu_summary[fu_name]
-                c1 = ws_s2.cell(row=parent_r, column=2, value=f_data["out"])
-                c2 = ws_s2.cell(row=parent_r, column=3, value=f_data["rec"])
-                c3 = ws_s2.cell(row=parent_r, column=4, value=f_data["bal"])
-
-            for cell in (c1, c2, c3):
-                cell.font = font_bold
+        branch_items = sorted(fu_branch_summary[fu_name].items())
+        branch_start_r = cur_r
+        for b_name, b_data in branch_items:
+            ws_s2.cell(row=cur_r, column=1, value=f"  {b_name}")
+            cb1 = ws_s2.cell(row=cur_r, column=2, value=b_data["out"])
+            cb2 = ws_s2.cell(row=cur_r, column=3, value=b_data["rec"])
+            cb3 = ws_s2.cell(row=cur_r, column=4, value=b_data["bal"])
+            for cell in (cb1, cb2, cb3):
                 cell.number_format = num_fmt_curr
                 cell.alignment = align_right
+            cur_r += 1
+        branch_end_r = cur_r - 1
+
+        # Dynamic formula for FU parent row in Section 2 summing its branch children
+        if branch_start_r <= branch_end_r:
+            c1 = ws_s2.cell(row=parent_r, column=2, value=f"=SUM(B{branch_start_r}:B{branch_end_r})")
+            c2 = ws_s2.cell(row=parent_r, column=3, value=f"=SUM(C{branch_start_r}:C{branch_end_r})")
+            c3 = ws_s2.cell(row=parent_r, column=4, value=f"=SUM(D{branch_start_r}:D{branch_end_r})")
+        else:
+            f_data = fu_summary[fu_name]
+            c1 = ws_s2.cell(row=parent_r, column=2, value=f_data["out"])
+            c2 = ws_s2.cell(row=parent_r, column=3, value=f_data["rec"])
+            c3 = ws_s2.cell(row=parent_r, column=4, value=f_data["bal"])
+
+        for cell in (c1, c2, c3):
+            cell.font = font_bold
+            cell.number_format = num_fmt_curr
+            cell.alignment = align_right
 
     # Final Grand Total for breakdown using dynamic SUM formula
     ws_s2.cell(row=cur_r, column=1, value="Grand Total").font = font_bold

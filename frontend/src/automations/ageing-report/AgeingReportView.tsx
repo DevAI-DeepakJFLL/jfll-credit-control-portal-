@@ -14,6 +14,10 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Edit2,
   Check,
   X,
@@ -115,6 +119,27 @@ interface BatchListItem {
   created_at: string;
 }
 
+interface DebtorVoucher {
+  id: number;
+  batch_uuid: string;
+  customer_name: string;
+  voucher_no: string;
+  voucher_type: string;
+  posting_date: string;
+  due_date: string;
+  invoice_amount: number;
+  allocated_amount: number;
+  credit_note: number;
+  outstanding_amount: number;
+  on_account_amount: number;
+  net_outstanding_inr: number;
+  age_days: number;
+  payment_terms: string;
+  sales_person: string;
+  branch: string;
+  remarks: string;
+}
+
 export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
   activeTab: externalActiveTab,
   setActiveTab: externalSetActiveTab
@@ -137,6 +162,15 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
   const [selectedFUPerson, setSelectedFUPerson] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+
+  // Sorting state (Item 6)
+  const [sortBy, setSortBy] = useState<string>('outstanding');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  // Voucher drilldown drawer state (Item 5)
+  const [expandedCustomerName, setExpandedCustomerName] = useState<string | null>(null);
+  const [customerVouchers, setCustomerVouchers] = useState<Record<string, DebtorVoucher[]>>({});
+  const [loadingVouchers, setLoadingVouchers] = useState<boolean>(false);
 
   // 300ms Search Debounce to prevent network stampedes and race conditions
   useEffect(() => {
@@ -207,14 +241,16 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
     }
   }, [selectedBatchUuid, loadBatchSummary]);
 
-  // 3. Load customer table records
+  // 3. Load customer table records with dynamic sorting and filters
   const loadCustomers = useCallback(async () => {
     if (!selectedBatchUuid) return;
     setIsLoadingCustomers(true);
     try {
       const params = new URLSearchParams({
         page: page.toString(),
-        page_size: pageSize.toString()
+        page_size: pageSize.toString(),
+        sort_by: sortBy,
+        sort_dir: sortDir
       });
       if (selectedBranch && selectedBranch !== 'all') {
         params.append('branch', selectedBranch);
@@ -237,13 +273,47 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
     } finally {
       setIsLoadingCustomers(false);
     }
-  }, [selectedBatchUuid, page, pageSize, selectedBranch, selectedFUPerson, debouncedSearch]);
+  }, [selectedBatchUuid, page, pageSize, selectedBranch, selectedFUPerson, debouncedSearch, sortBy, sortDir]);
 
   useEffect(() => {
     if (selectedBatchUuid) {
       loadCustomers();
     }
   }, [selectedBatchUuid, loadCustomers]);
+
+  // Handle column header click for sorting
+  const handleSort = (columnKey: string) => {
+    if (sortBy === columnKey) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(columnKey);
+      setSortDir('desc');
+    }
+    setPage(1);
+  };
+
+  // Toggle invoice-level voucher drawer for debtor
+  const toggleVouchers = async (customerName: string) => {
+    if (expandedCustomerName === customerName) {
+      setExpandedCustomerName(null);
+      return;
+    }
+    setExpandedCustomerName(customerName);
+    if (!customerVouchers[customerName]) {
+      setLoadingVouchers(true);
+      try {
+        const res = await fetch(apiUrl(`/api/ageing/vouchers/${selectedBatchUuid}?customer_name=${encodeURIComponent(customerName)}`));
+        if (res.ok) {
+          const data = await parseJsonResponse(res);
+          setCustomerVouchers((prev) => ({ ...prev, [customerName]: data.vouchers || [] }));
+        }
+      } catch (e) {
+        console.error('Failed to load vouchers:', e);
+      } finally {
+        setLoadingVouchers(false);
+      }
+    }
+  };
 
   // 4. File upload handler
   const handleFileUpload = async (file: File) => {
@@ -326,10 +396,23 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
     }
   };
 
-  // 6. Excel download trigger
-  const handleDownloadExcel = () => {
+  // 6. Excel download trigger (supports filtered export)
+  const handleDownloadExcel = (filteredOnly: boolean = false) => {
     if (!selectedBatchUuid) return;
-    window.open(apiUrl(`/api/ageing/export/${selectedBatchUuid}`), '_blank');
+    const params = new URLSearchParams();
+    if (filteredOnly) {
+      if (selectedBranch && selectedBranch !== 'all') {
+        params.append('branch', selectedBranch);
+      }
+      if (selectedFUPerson && selectedFUPerson !== 'all') {
+        params.append('fu_person', selectedFUPerson);
+      }
+      if (debouncedSearch.trim()) {
+        params.append('search', debouncedSearch.trim());
+      }
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    window.open(apiUrl(`/api/ageing/export/${selectedBatchUuid}${query}`), '_blank');
   };
 
   const totalPages = Math.max(1, Math.ceil(totalCustomers / pageSize));
@@ -612,7 +695,7 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
 
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={handleDownloadExcel}
+                  onClick={() => handleDownloadExcel(false)}
                   disabled={!selectedBatchUuid}
                   className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50"
                 >
@@ -771,30 +854,103 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                   Showing {customers.length} of {totalCustomers} debtors
                 </span>
                 <button
-                  onClick={handleDownloadExcel}
+                  onClick={() => handleDownloadExcel(true)}
                   disabled={!selectedBatchUuid}
                   className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                  title={selectedBranch !== 'all' || selectedFUPerson !== 'all' ? "Export filtered debtor view" : "Export active debtor table"}
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Excel</span>
+                  <span>{selectedBranch !== 'all' || selectedFUPerson !== 'all' ? "Export Filtered Table" : "Export Excel"}</span>
                 </button>
               </div>
             </div>
 
-            {/* Table with strict column widths and whitespace-nowrap */}
+            {/* Table with strict column widths, column sorting, and voucher drilldown drawer */}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-600 min-w-[1150px]">
                 <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                   <tr>
                     <th className="py-3 px-3.5 whitespace-nowrap w-28">Follow-Up</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap min-w-[200px] max-w-[280px]">Customer Name</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap w-24">Branch</th>
+                    <th
+                      onClick={() => handleSort('customer_name')}
+                      className="py-3 px-3.5 whitespace-nowrap min-w-[200px] max-w-[280px] cursor-pointer hover:bg-slate-200/80 transition select-none"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>Customer Name</span>
+                        {sortBy === 'customer_name' ? (
+                          sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600 ml-1 inline" /> : <ArrowDown className="w-3 h-3 text-blue-600 ml-1 inline" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 ml-1 inline" />
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort('branch')}
+                      className="py-3 px-3.5 whitespace-nowrap w-24 cursor-pointer hover:bg-slate-200/80 transition select-none"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>Branch</span>
+                        {sortBy === 'branch' ? (
+                          sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600 ml-1 inline" /> : <ArrowDown className="w-3 h-3 text-blue-600 ml-1 inline" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 ml-1 inline" />
+                        )}
+                      </div>
+                    </th>
                     <th className="py-3 px-3.5 whitespace-nowrap w-36">Sales Person</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-32">Outstanding</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-28">This IATA</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-28">Last IATA</th>
+                    <th
+                      onClick={() => handleSort('outstanding')}
+                      className="py-3 px-3.5 whitespace-nowrap text-right w-32 cursor-pointer hover:bg-slate-200/80 transition select-none"
+                    >
+                      <div className="flex items-center justify-end space-x-1">
+                        <span>Outstanding</span>
+                        {sortBy === 'outstanding' ? (
+                          sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600 inline" /> : <ArrowDown className="w-3 h-3 text-blue-600 inline" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 inline" />
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort('this_iata')}
+                      className="py-3 px-3.5 whitespace-nowrap text-right w-28 cursor-pointer hover:bg-slate-200/80 transition select-none"
+                    >
+                      <div className="flex items-center justify-end space-x-1">
+                        <span>This IATA</span>
+                        {sortBy === 'this_iata' ? (
+                          sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600 inline" /> : <ArrowDown className="w-3 h-3 text-blue-600 inline" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 inline" />
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort('last_iata')}
+                      className="py-3 px-3.5 whitespace-nowrap text-right w-28 cursor-pointer hover:bg-slate-200/80 transition select-none"
+                    >
+                      <div className="flex items-center justify-end space-x-1">
+                        <span>Last IATA</span>
+                        {sortBy === 'last_iata' ? (
+                          sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600 inline" /> : <ArrowDown className="w-3 h-3 text-blue-600 inline" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 inline" />
+                        )}
+                      </div>
+                    </th>
                     <th className="py-3 px-3.5 whitespace-nowrap text-right w-28">&gt; 90 Days</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap text-right w-32">Grand Total</th>
+                    <th
+                      onClick={() => handleSort('grand_total')}
+                      className="py-3 px-3.5 whitespace-nowrap text-right w-32 cursor-pointer hover:bg-slate-200/80 transition select-none"
+                    >
+                      <div className="flex items-center justify-end space-x-1">
+                        <span>Grand Total</span>
+                        {sortBy === 'grand_total' ? (
+                          sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600 inline" /> : <ArrowDown className="w-3 h-3 text-blue-600 inline" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 inline" />
+                        )}
+                      </div>
+                    </th>
                     <th className="py-3 px-3.5 whitespace-nowrap min-w-[180px] max-w-[240px]">Remark</th>
                     <th className="py-3 px-3.5 whitespace-nowrap text-center w-20">Action</th>
                   </tr>
@@ -816,99 +972,191 @@ export const AgeingReportView: React.FC<AgeingReportViewProps> = ({
                   ) : (
                     customers.map((row) => {
                       const isEditing = editingId === row.id;
+                      const isExpanded = expandedCustomerName === row.customer_name;
                       const above90 = row.bucket_91_180 + row.bucket_181_240 + row.bucket_241_365 + row.bucket_above_365;
+                      const vouchers = customerVouchers[row.customer_name] || [];
 
                       return (
-                        <tr key={row.id} className="hover:bg-slate-50 transition h-10">
-                          <td className="py-2 px-3.5 font-semibold text-slate-800 whitespace-nowrap">
-                            {isEditing ? (
-                              <select
-                                value={editFUPerson}
-                                onChange={(e) => setEditFUPerson(e.target.value)}
-                                style={{ colorScheme: 'light' }}
-                                className="px-2 py-1 rounded border border-blue-400 text-xs bg-white text-slate-800"
-                              >
-                                <option value="Nikita">Nikita</option>
-                                <option value="Vaibhav">Vaibhav</option>
-                                <option value="Siddhesh">Siddhesh</option>
-                                <option value="Other">Other</option>
-                              </select>
-                            ) : (
-                              <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap ${
-                                row.fu_person === 'Nikita' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                                row.fu_person === 'Vaibhav' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                                row.fu_person === 'Siddhesh' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                'bg-slate-100 text-slate-600'
-                              }`}>
-                                {row.fu_person}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3.5 font-bold text-slate-900 min-w-[200px] max-w-[280px] truncate" title={row.customer_name}>
-                            {row.customer_name}
-                          </td>
-                          <td className="py-2 px-3.5 whitespace-nowrap text-slate-700">{row.branch}</td>
-                          <td className="py-2 px-3.5 whitespace-nowrap text-slate-600">{row.sales_person}</td>
-                          <td className="py-2 px-3.5 text-right font-bold text-slate-900 whitespace-nowrap tabular-nums">
-                            ₹&nbsp;{row.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                          </td>
-                          <td className="py-2 px-3.5 text-right text-blue-700 font-semibold whitespace-nowrap tabular-nums">
-                            ₹&nbsp;{row.this_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                          </td>
-                          <td className="py-2 px-3.5 text-right text-indigo-700 font-semibold whitespace-nowrap tabular-nums">
-                            ₹&nbsp;{row.last_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                          </td>
-                          <td className="py-2 px-3.5 text-right text-rose-700 font-semibold whitespace-nowrap tabular-nums">
-                            ₹&nbsp;{above90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                          </td>
-                          <td className="py-2 px-3.5 text-right font-bold text-slate-900 whitespace-nowrap tabular-nums">
-                            ₹&nbsp;{row.grand_total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                          </td>
-                          <td className="py-2 px-3.5 text-slate-500 italic min-w-[180px] max-w-[240px]">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editRemark}
-                                onChange={(e) => setEditRemark(e.target.value)}
-                                className="w-full px-2 py-1 rounded border border-blue-400 text-xs bg-white text-slate-800"
-                                placeholder="Add follow-up notes..."
-                              />
-                            ) : (
-                              <span className="truncate block" title={row.remark || 'No remark'}>
-                                {row.remark || '-'}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3.5 text-center whitespace-nowrap">
-                            {isEditing ? (
-                              <div className="flex items-center justify-center space-x-1">
-                                <button
-                                  onClick={() => handleSaveEdit(row.id)}
-                                  disabled={isSavingEdit}
-                                  className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
-                                  title="Save Changes"
+                        <React.Fragment key={row.id}>
+                          <tr className={`transition h-10 ${isExpanded ? 'bg-blue-50/40' : 'hover:bg-slate-50'}`}>
+                            <td className="py-2 px-3.5 font-semibold text-slate-800 whitespace-nowrap">
+                              {isEditing ? (
+                                <select
+                                  value={editFUPerson}
+                                  onChange={(e) => setEditFUPerson(e.target.value)}
+                                  style={{ colorScheme: 'light' }}
+                                  className="px-2 py-1 rounded border border-blue-400 text-xs bg-white text-slate-800"
                                 >
-                                  <Check className="w-3.5 h-3.5" />
-                                </button>
+                                  <option value="Nikita">Nikita</option>
+                                  <option value="Vaibhav">Vaibhav</option>
+                                  <option value="Siddhesh">Siddhesh</option>
+                                  <option value="Other">Other</option>
+                                </select>
+                              ) : (
+                                <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap ${
+                                  row.fu_person === 'Nikita' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                                  row.fu_person === 'Vaibhav' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                  row.fu_person === 'Siddhesh' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                  'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {row.fu_person}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3.5 font-bold text-slate-900 min-w-[200px] max-w-[280px]">
+                              <div className="flex items-center space-x-1.5">
                                 <button
-                                  onClick={() => setEditingId(null)}
-                                  className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 cursor-pointer"
-                                  title="Cancel"
+                                  type="button"
+                                  onClick={() => toggleVouchers(row.customer_name)}
+                                  className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-blue-600 transition cursor-pointer shrink-0"
+                                  title={isExpanded ? "Collapse invoices" : "View individual invoices & vouchers"}
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-3.5 h-3.5 text-blue-600" />
+                                  ) : (
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  )}
                                 </button>
+                                <span className="truncate" title={row.customer_name}>{row.customer_name}</span>
                               </div>
-                            ) : (
-                              <button
-                                onClick={() => handleStartEdit(row)}
-                                className="p-1 text-slate-400 hover:text-blue-600 transition cursor-pointer"
-                                title="Edit Follow-up assignment or remark"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
+                            </td>
+                            <td className="py-2 px-3.5 whitespace-nowrap text-slate-700">{row.branch}</td>
+                            <td className="py-2 px-3.5 whitespace-nowrap text-slate-600">{row.sales_person}</td>
+                            <td className="py-2 px-3.5 text-right font-bold text-slate-900 whitespace-nowrap tabular-nums">
+                              ₹&nbsp;{row.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            </td>
+                            <td className="py-2 px-3.5 text-right text-blue-700 font-semibold whitespace-nowrap tabular-nums">
+                              ₹&nbsp;{row.this_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            </td>
+                            <td className="py-2 px-3.5 text-right text-indigo-700 font-semibold whitespace-nowrap tabular-nums">
+                              ₹&nbsp;{row.last_iata.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            </td>
+                            <td className="py-2 px-3.5 text-right text-rose-700 font-semibold whitespace-nowrap tabular-nums">
+                              ₹&nbsp;{above90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            </td>
+                            <td className="py-2 px-3.5 text-right font-bold text-slate-900 whitespace-nowrap tabular-nums">
+                              ₹&nbsp;{row.grand_total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            </td>
+                            <td className="py-2 px-3.5 text-slate-500 italic min-w-[180px] max-w-[240px]">
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editRemark}
+                                  onChange={(e) => setEditRemark(e.target.value)}
+                                  className="w-full px-2 py-1 rounded border border-blue-400 text-xs bg-white text-slate-800"
+                                  placeholder="Add follow-up notes..."
+                                />
+                              ) : (
+                                <span className="truncate block" title={row.remark || 'No remark'}>
+                                  {row.remark || '-'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3.5 text-center whitespace-nowrap">
+                              {isEditing ? (
+                                <div className="flex items-center justify-center space-x-1">
+                                  <button
+                                    onClick={() => handleSaveEdit(row.id)}
+                                    disabled={isSavingEdit}
+                                    className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                                    title="Save Changes"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingId(null)}
+                                    className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 cursor-pointer"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => handleStartEdit(row)}
+                                  className="p-1 text-slate-400 hover:text-blue-600 transition cursor-pointer"
+                                  title="Edit Follow-up assignment or remark"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+
+                          {/* Invoice-level voucher drill-down drawer (Item 5) */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <td colSpan={11} className="py-3 px-6">
+                                <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
+                                  <div className="px-4 py-2 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
+                                    <div className="flex items-center space-x-2">
+                                      <FileText className="w-4 h-4 text-blue-600" />
+                                      <span className="font-bold text-xs text-slate-800">
+                                        Vouchers & Invoices — {row.customer_name}
+                                      </span>
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
+                                        {vouchers.length} vouchers
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] text-slate-500">
+                                      Branch: <strong className="text-slate-700">{row.branch}</strong> | Terms: <strong className="text-slate-700">{row.payment_terms}</strong>
+                                    </span>
+                                  </div>
+
+                                  {loadingVouchers && vouchers.length === 0 ? (
+                                    <div className="p-4 text-center text-xs text-slate-500 flex items-center justify-center space-x-2">
+                                      <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
+                                      <span>Loading customer vouchers...</span>
+                                    </div>
+                                  ) : vouchers.length === 0 ? (
+                                    <div className="p-4 text-center text-xs text-slate-400">
+                                      No voucher records found in this batch.
+                                    </div>
+                                  ) : (
+                                    <div className="max-h-60 overflow-y-auto">
+                                      <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-600 font-semibold border-b border-slate-200 sticky top-0">
+                                          <tr>
+                                            <th className="py-2 px-3">Voucher # / MBL</th>
+                                            <th className="py-2 px-3">Type</th>
+                                            <th className="py-2 px-3">Posting Date</th>
+                                            <th className="py-2 px-3">Due Date</th>
+                                            <th className="py-2 px-3 text-right">Age</th>
+                                            <th className="py-2 px-3 text-right">Invoice Amt</th>
+                                            <th className="py-2 px-3 text-right">Allocated</th>
+                                            <th className="py-2 px-3 text-right">Net Outstanding</th>
+                                            <th className="py-2 px-3">Remark</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                                          {vouchers.map((v) => (
+                                            <tr key={v.id} className="hover:bg-blue-50/40">
+                                              <td className="py-1.5 px-3 font-semibold text-slate-900 font-sans">{v.voucher_no || '-'}</td>
+                                              <td className="py-1.5 px-3 text-slate-600 font-sans">{v.voucher_type}</td>
+                                              <td className="py-1.5 px-3 text-slate-600 font-sans">{v.posting_date || '-'}</td>
+                                              <td className="py-1.5 px-3 text-slate-600 font-sans">{v.due_date || '-'}</td>
+                                              <td className="py-1.5 px-3 text-right font-medium text-slate-700">{v.age_days}d</td>
+                                              <td className="py-1.5 px-3 text-right tabular-nums text-slate-700">
+                                                ₹&nbsp;{v.invoice_amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                              </td>
+                                              <td className="py-1.5 px-3 text-right tabular-nums text-slate-500">
+                                                ₹&nbsp;{v.allocated_amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                              </td>
+                                              <td className={`py-1.5 px-3 text-right tabular-nums font-bold ${v.net_outstanding_inr > 0 ? 'text-slate-900' : 'text-emerald-600'}`}>
+                                                ₹&nbsp;{v.net_outstanding_inr.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                              </td>
+                                              <td className="py-1.5 px-3 text-slate-500 italic truncate max-w-xs font-sans">{v.remarks || '-'}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })
                   )}

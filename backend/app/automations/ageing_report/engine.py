@@ -160,16 +160,19 @@ def format_crores_lacs(amount: float) -> str:
 def aggregate_customer_ageing(
     transactions: List[RawTransaction],
     batch_uuid: str = "",
-    overrides: Optional[Dict[str, str]] = None
+    overrides: Optional[Dict[str, str]] = None,
+    carry_forward: Optional[Dict[str, Dict[str, Any]]] = None
 ) -> List[CustomerAgeingSummary]:
     """
     Groups individual voucher transactions by Customer, categorizes balances into
     8 standard age buckets, computes IATA terms, and returns sorted customer summaries.
+    Applies FIFO payment netting against oldest overdue buckets so invoice tenors remain
+    strictly positive and advances/unallocated receipts are isolated in ON A/C.
     """
-    # Group transactions by customer
+    # Group transactions by cleaned customer name to prevent split rows
     cust_groups: Dict[str, List[RawTransaction]] = collections.defaultdict(list)
     for tx in transactions:
-        c_clean = tx.customer.strip()
+        c_clean = clean_customer_name(tx.customer.strip()) if tx.customer else ""
         if c_clean:
             cust_groups[c_clean].append(tx)
 
@@ -193,16 +196,9 @@ def aggregate_customer_ageing(
                 latest_remark = tx.remarks
                 break
 
-        # Bucket amounts initialization
-        b_0_30 = 0.0
-        b_31_45 = 0.0
-        b_46_60 = 0.0
-        b_61_90 = 0.0
-        b_91_180 = 0.0
-        b_181_240 = 0.0
-        b_241_365 = 0.0
-        b_above_365 = 0.0
-
+        # 8 Age Buckets: [0-30, 31-45, 46-60, 61-90, 91-180, 181-240, 241-365, >365]
+        buckets = [0.0] * 8
+        unallocated_payments = 0.0
         total_on_ac = 0.0
 
         for tx in tx_list:
@@ -213,42 +209,70 @@ def aggregate_customer_ageing(
             if on_ac > 0:
                 total_on_ac += on_ac
 
-            # Sum into appropriate age bracket
-            if age <= 30:
-                b_0_30 += net
-            elif age <= 45:
-                b_31_45 += net
-            elif age <= 60:
-                b_46_60 += net
-            elif age <= 90:
-                b_61_90 += net
-            elif age <= 180:
-                b_91_180 += net
-            elif age <= 240:
-                b_181_240 += net
-            elif age <= 365:
-                b_241_365 += net
-            else:
-                b_above_365 += net
+            if net > 0:
+                # Debit voucher (Sales Invoice, debit Journal Entry) -> bucket by age
+                if age <= 30:
+                    buckets[0] += net
+                elif age <= 45:
+                    buckets[1] += net
+                elif age <= 60:
+                    buckets[2] += net
+                elif age <= 90:
+                    buckets[3] += net
+                elif age <= 180:
+                    buckets[4] += net
+                elif age <= 240:
+                    buckets[5] += net
+                elif age <= 365:
+                    buckets[6] += net
+                else:
+                    buckets[7] += net
+            elif net < 0:
+                # Credit receipt / Payment Entry / advance payment
+                unallocated_payments += abs(net)
+                if on_ac == 0:
+                    total_on_ac += abs(net)
+
+        # FIFO Netting: Apply unallocated payment receipts against oldest overdue buckets first
+        credit_pool = unallocated_payments
+        for b_i in range(7, -1, -1):
+            if credit_pool <= 0:
+                break
+            if buckets[b_i] > 0:
+                deduct = min(buckets[b_i], credit_pool)
+                buckets[b_i] -= deduct
+                credit_pool -= deduct
+
+        b_0_30, b_31_45, b_46_60, b_61_90, b_91_180, b_181_240, b_241_365, b_above_365 = buckets
+        grand_total = sum(buckets)
 
         # Overdue outstanding: Overdue balances dynamically determined by customer payment terms
         start_idx, _ = resolve_overdue_start(payment_terms)
-        all_buckets = [b_0_30, b_31_45, b_46_60, b_61_90, b_91_180, b_181_240, b_241_365, b_above_365]
-        outstanding = sum(all_buckets[start_idx:])
+        outstanding = sum(buckets[start_idx:])
         received = 0.0
+
+        # Carry-forward previous notes, assigned FU owner, and logged received payments from previous batch
+        cf = carry_forward.get(cust_name) if carry_forward else None
+        if cf:
+            if cf.get("remark"):
+                latest_remark = cf["remark"] if not latest_remark else f"{latest_remark} | {cf['remark']}"
+            if cf.get("received") is not None and cf["received"] > 0:
+                received = cf["received"]
+
         balance = outstanding - received
-        grand_total = sum(all_buckets)
 
         # Freight-specific terms
         this_iata = b_31_45
         last_iata = b_46_60
         on_ac_val = -total_on_ac if total_on_ac > 0 else 0.0
 
-        # Follow-Up Person assignment
+        # Follow-Up Person assignment (precedence: carry_forward -> overrides -> sales mapping -> branch fallback)
         fu_person = resolve_fu_person(sales_person, branch, cust_name, overrides)
+        if cf and cf.get("fu_person"):
+            fu_person = cf["fu_person"]
 
-        # Skip rows with zero total exposure
-        if abs(grand_total) < 0.01 and abs(outstanding) < 0.01:
+        # Item 2 Fix: Skip customers with zero exposure or overall credit balances (net deposits with company)
+        if grand_total <= 0.01 and outstanding <= 0.01:
             continue
 
         item = CustomerAgeingSummary(

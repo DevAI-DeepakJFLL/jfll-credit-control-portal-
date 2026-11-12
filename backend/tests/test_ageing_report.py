@@ -169,6 +169,123 @@ class TestAgeingReportModule(unittest.TestCase):
         self.assertEqual(res_45[0].outstanding, 0.0)
         self.assertEqual(res_45[0].grand_total, 50_000)
 
+    def test_fifo_payment_netting_and_credit_balance(self):
+        # Item 1: Unallocated payment entries must NOT poison 0-30 bucket
+        # Instead, they net against oldest buckets (FIFO)
+        tx1 = RawTransaction(
+            customer="FIFO CLIENT",
+            voucher_no="INV1",
+            voucher_type="Sales Invoice",
+            net_outstanding_inr=100_000,
+            age_days=10,  # 0-30 bucket
+            branch="Mumbai"
+        )
+        tx2 = RawTransaction(
+            customer="FIFO CLIENT",
+            voucher_no="INV2",
+            voucher_type="Sales Invoice",
+            net_outstanding_inr=30_000,
+            age_days=50,  # 46-60 bucket
+            branch="Mumbai"
+        )
+        tx3 = RawTransaction(
+            customer="FIFO CLIENT",
+            voucher_no="INV3",
+            voucher_type="Sales Invoice",
+            net_outstanding_inr=20_000,
+            age_days=400,  # >365 bucket
+            branch="Mumbai"
+        )
+        tx_pay = RawTransaction(
+            customer="FIFO CLIENT",
+            voucher_no="PAY1",
+            voucher_type="Payment Entry",
+            net_outstanding_inr=-50_000,  # Payment receipt of 50k
+            on_account_amount=50_000,
+            age_days=0,
+            branch="Mumbai"
+        )
+
+        res = aggregate_customer_ageing([tx1, tx2, tx3, tx_pay])
+        self.assertEqual(len(res), 1)
+        c = res[0]
+        # 0-30 days bucket is strictly preserved at positive 100k
+        self.assertEqual(c.bucket_0_30, 100_000)
+        # >365 (20k) is fully cleared by 50k payment
+        self.assertEqual(c.bucket_above_365, 0.0)
+        # 46-60 (30k) is fully cleared by remaining 30k payment
+        self.assertEqual(c.bucket_46_60, 0.0)
+        # Outstanding is sum of overdue (>30d) = 0
+        self.assertEqual(c.outstanding, 0.0)
+        # Grand total is remaining positive 0-30 balance = 100k
+        self.assertEqual(c.grand_total, 100_000)
+        # Advance / ON A/C records total payment
+        self.assertEqual(c.on_ac, -50_000)
+
+        # Item 2: Customer with net credit balance (invoices < payments) is excluded from debtors
+        tx_overpaid = RawTransaction(
+            customer="OVERPAID CORP",
+            voucher_no="INV4",
+            voucher_type="Sales Invoice",
+            net_outstanding_inr=50_000,
+            age_days=20,
+            branch="Mumbai"
+        )
+        tx_big_pay = RawTransaction(
+            customer="OVERPAID CORP",
+            voucher_no="PAY2",
+            voucher_type="Payment Entry",
+            net_outstanding_inr=-80_000,  # Excess payment of 80k
+            on_account_amount=80_000,
+            age_days=0,
+            branch="Mumbai"
+        )
+        overpaid_res = aggregate_customer_ageing([tx_overpaid, tx_big_pay])
+        # Overpaid customers are excluded from active debtor reports
+        self.assertEqual(len(overpaid_res), 0)
+
+    def test_customer_name_punctuation_unification(self):
+        # Item 9: Ensure period vs no-period variations are merged into 1 debtor
+        tx1 = RawTransaction(
+            customer="A ENTERPRISES HOLDING INC",
+            net_outstanding_inr=50_000,
+            age_days=20,
+            branch="Mumbai"
+        )
+        tx2 = RawTransaction(
+            customer="A ENTERPRISES HOLDING INC.",  # with period
+            net_outstanding_inr=40_000,
+            age_days=40,
+            branch="Mumbai"
+        )
+        merged = aggregate_customer_ageing([tx1, tx2])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].customer_name, "A ENTERPRISES HOLDING INC")
+        self.assertEqual(merged[0].grand_total, 90_000)
+
+    def test_carry_forward_notes_and_fu_person(self):
+        # Item 3: Carry forward remarks and FU owner from previous batch
+        tx = RawTransaction(
+            customer="CONTINUOUS CLIENT",
+            net_outstanding_inr=60_000,
+            age_days=45,
+            sales_person="Unknown",
+            branch="Mumbai"
+        )
+        carry_forward = {
+            "CONTINUOUS CLIENT": {
+                "fu_person": "Nikita",
+                "remark": "Promised 20k payment this Friday",
+                "received": 10_000.0
+            }
+        }
+        res = aggregate_customer_ageing([tx], carry_forward=carry_forward)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0].fu_person, "Nikita")
+        self.assertEqual(res[0].remark, "Promised 20k payment this Friday")
+        self.assertEqual(res[0].received, 10_000.0)
+        self.assertEqual(res[0].balance, 50_000.0)
+
     def test_excel_generator_structure_and_subtotals(self):
         c1 = CustomerAgeingSummary(
             customer_name="ALPHA LOGISTICS",
@@ -284,6 +401,20 @@ class TestAgeingReportModule(unittest.TestCase):
         for c in mumbai_resp.json()["customers"]:
             self.assertEqual(c["branch"], "Mumbai")
 
+        # Test dynamic sorting (Item 6)
+        sorted_resp = self.client.get(f"/api/ageing/customers/{batch_uuid}?sort_by=customer_name&sort_dir=asc&page=1&page_size=5")
+        self.assertEqual(sorted_resp.status_code, 200)
+        cust_names = [c["customer_name"] for c in sorted_resp.json()["customers"]]
+        self.assertEqual(cust_names, sorted(cust_names))
+
+        # Test voucher drill-down endpoint (Item 5)
+        test_cust_name = cust_data["customers"][0]["customer_name"]
+        voucher_resp = self.client.get(f"/api/ageing/vouchers/{batch_uuid}?customer_name={test_cust_name}")
+        self.assertEqual(voucher_resp.status_code, 200)
+        voucher_data = voucher_resp.json()
+        self.assertEqual(voucher_data["batch_uuid"], batch_uuid)
+        self.assertGreater(len(voucher_data["vouchers"]), 0)
+
         # 4. Patch customer follow-up
         cust_id = cust_data["customers"][0]["id"]
         patch_resp = self.client.patch(
@@ -292,7 +423,7 @@ class TestAgeingReportModule(unittest.TestCase):
         )
         self.assertEqual(patch_resp.status_code, 200)
 
-        # 5. Export Excel
+        # 5. Export Excel (Full and Filtered - Item 8)
         exp_resp = self.client.get(f"/api/ageing/export/{batch_uuid}")
         self.assertEqual(exp_resp.status_code, 200)
         self.assertEqual(
@@ -302,6 +433,12 @@ class TestAgeingReportModule(unittest.TestCase):
         wb_exp = openpyxl.load_workbook(io.BytesIO(exp_resp.content))
         self.assertIn("FINAL", wb_exp.sheetnames)
         self.assertIn("Sheet2", wb_exp.sheetnames)
+
+        # Filtered export for Delhi branch
+        filtered_exp_resp = self.client.get(f"/api/ageing/export/{batch_uuid}?branch=Delhi")
+        self.assertEqual(filtered_exp_resp.status_code, 200)
+        wb_delhi = openpyxl.load_workbook(io.BytesIO(filtered_exp_resp.content))
+        self.assertIn("FINAL", wb_delhi.sheetnames)
 
 if __name__ == "__main__":
     unittest.main()

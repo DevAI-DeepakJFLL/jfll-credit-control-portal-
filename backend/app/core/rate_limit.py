@@ -31,7 +31,7 @@ def check_rate_limit(request: Request, limit: int = RATE_LIMIT_PER_MINUTE, windo
         if len(active_timestamps) >= limit:
             raise HTTPException(
                 status_code=429,
-                detail="Rate limit exceeded. Maximum 30 requests per minute allowed."
+                detail=f"Rate limit exceeded. Maximum {limit} requests per minute allowed."
             )
         _ip_request_timestamps[ip].append(now)
 

@@ -127,6 +127,33 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ageing_cust_name ON ageing_customer_summaries(customer_name);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ageing_cust_fu ON ageing_customer_summaries(batch_uuid, fu_person);')
 
+        # 3. Automation: Ageing Drilldown Vouchers
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ageing_vouchers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_uuid TEXT NOT NULL,
+                customer_name TEXT NOT NULL,
+                voucher_no TEXT,
+                voucher_type TEXT,
+                posting_date TEXT,
+                due_date TEXT,
+                invoice_amount REAL DEFAULT 0.0,
+                allocated_amount REAL DEFAULT 0.0,
+                credit_note REAL DEFAULT 0.0,
+                outstanding_amount REAL DEFAULT 0.0,
+                on_account_amount REAL DEFAULT 0.0,
+                net_outstanding_inr REAL DEFAULT 0.0,
+                age_days INTEGER DEFAULT 0,
+                payment_terms TEXT,
+                sales_person TEXT,
+                branch TEXT,
+                remarks TEXT,
+                FOREIGN KEY (batch_uuid) REFERENCES ageing_batches(batch_uuid) ON DELETE CASCADE
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ageing_vouchers_lookup ON ageing_vouchers(batch_uuid, customer_name);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ageing_vouchers_batch ON ageing_vouchers(batch_uuid);')
+
         conn.commit()
 
         # Reconcile any individual remote records written by concurrent serverless containers

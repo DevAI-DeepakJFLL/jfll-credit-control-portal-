@@ -149,7 +149,7 @@ def parse_master_ar_file(
         cust_raw = row[i_customer]
         if not cust_raw:
             continue
-        cust_name = clean_text(cust_raw)
+        cust_name = clean_customer_name(clean_text(cust_raw))
         if not cust_name:
             continue
 
